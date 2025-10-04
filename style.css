@@ -160,6 +160,20 @@
   .collection-wrap{
     max-height: 62vh; overflow: auto; border-radius: 12px;
   }
+  /* Themed scrollbars (Windows Chrome/Edge/Safari) */
+  .collection-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+  .collection-wrap::-webkit-scrollbar-track {
+    background: #0b0b0b; border:1px solid #1a1a1a; border-radius: 8px;
+  }
+  .collection-wrap::-webkit-scrollbar-thumb {
+    background: #1e6f52; /* dark accent */
+    border:1px solid #14442f; border-radius: 8px;
+  }
+  .collection-wrap::-webkit-scrollbar-thumb:hover { background: #27986f; }
+  .collection-wrap::-webkit-scrollbar-corner { background: #0b0b0b; }
+
+  /* Firefox */
+  .collection-wrap { scrollbar-color: #1e6f52 #0b0b0b; scrollbar-width: thin; }
   .collect-grid{
     display:grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap:12px;
   }
