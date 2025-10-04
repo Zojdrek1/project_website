@@ -4,7 +4,7 @@ var bindersRendered = false;
 
 /* ---------- typewriter prompt ---------- */
 const typed = document.getElementById('typed');
-const msg = ' welcome to zojdrek.dev — type: home | projects | cv | collection | binders';
+const msg = ' welcome to zdrojewski.dev — type: home | projects | cv | collection | binders';
 let i = 0;
 function typeNext(){ if (i <= msg.length){ typed.textContent = msg.slice(0, i++); setTimeout(typeNext, 18); } }
 window.addEventListener('DOMContentLoaded', typeNext);
@@ -91,6 +91,34 @@ function setupHamburger(){
   btn._bound = true;
 }
 window.addEventListener('DOMContentLoaded', setupHamburger);
+
+/* ---- CV: Generate downloadable PDF from page content ---- */
+function downloadCvPdf(){
+  try{
+    const el = document.getElementById('cv');
+    if (!el) { alert('CV section not found'); return; }
+    if (typeof html2pdf === 'undefined') {
+      alert('PDF generator not loaded. Please check your internet connection and try again.');
+      return;
+    }
+    // Temporarily switch to export theme
+    el.classList.add('cv-export');
+    // Slight delay to allow styles to apply
+    setTimeout(() => {
+      const opt = {
+        margin:       [10, 10, 10, 10], // top, left, bottom, right (mm via jsPDF unit)
+        filename:     'Hubert_Zdrojewski_CV.pdf',
+        image:        { type: 'jpeg', quality: 0.95 },
+        html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#FFFFFF' },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      html2pdf().from(el).set(opt).save().then(() => {
+        el.classList.remove('cv-export');
+      }).catch(() => el.classList.remove('cv-export'));
+    }, 50);
+  }catch(e){ console.error(e); alert('Failed to generate PDF. Try printing to PDF instead.'); }
+}
 
 /* ---------- fake terminal input (don’t steal focus) ---------- */
 const screen = document.getElementById('screen');

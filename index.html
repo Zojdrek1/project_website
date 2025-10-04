@@ -4,14 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0c0c0c">
-  <title>zojdrek.dev — terminal portfolio</title>
-  <meta name="description" content="zojdrek.dev — terminal-style portfolio (Home, Projects, CV, Collection)" />
+  <title>zdrojewski.dev — terminal portfolio</title>
+  <meta name="description" content="zdrojewski.dev — terminal-style portfolio (Home, Projects, CV, Collection)" />
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container crt">
     <header class="site">
-      <div class="brand glow">zojdrek.dev <small>// programming hub</small></div>
+      <a href="#home" class="brand glow" aria-label="Go to home">zdrojewski.dev <small>// programming hub</small></a>
       <button class="hamburger" id="hamburger" aria-label="Open menu" aria-controls="main-nav" aria-expanded="false">
         <span class="bar"></span>
         <span class="bar"></span>
@@ -34,13 +34,13 @@
     <main class="terminal">
       <div class="titlebar">
         <div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-        <div class="win-title">cmd — zojdrek.dev</div>
+        <div class="win-title">cmd — zdrojewski.dev</div>
       </div>
       <div class="screen" id="screen" tabindex="0">
 
         <!-- prompt line -->
         <div class="prompt" aria-label="shell prompt">
-          <span class="cwd">C:\Users\zojdrek&gt;</span>
+          <span class="cwd">C:\Users\zdrojewski&gt;</span>
           <span id="typed" class="glow" aria-live="polite"></span>
           <span class="caret" aria-hidden="true"></span>
         </div>
@@ -53,14 +53,14 @@
             <div class="keyvals">
               <div class="kv"><b>&gt; tech stack</b><br/>Python • Streamlit • SwiftUI • Godot 4 • Haskell • React</div>
               <div class="kv"><b>&gt; focus</b><br/>Data tools, UI/UX polish, performance, developer experience (DX), automation, AI, software engineering, game development</div>
-              <div class="kv"><b>&gt; contact</b><br/><a href="mailto:hello@zojdrek.dev" style="color:var(--link)">hello@zojdrek.dev</a></div>
+              <div class="kv"><b>&gt; contact</b><br/><a href="mailto:hello@zdrojewski.dev" style="color:var(--link)">hello@zdrojewski.dev</a></div>
             </div>
           </div>
         </section>
 
         <!-- PROJECTS -->
         <section id="projects" role="tabpanel">
-          <p><span class="cwd">C:\Users\zojdrek&gt;</span> dir projects</p>
+          <p><span class="cwd">C:\Users\zdrojewski&gt;</span> dir projects</p>
           <div class="projects">
             <article class="card">
               <h3>Money Manager</h3>
@@ -77,15 +77,113 @@
 
         <!-- CV -->
         <section id="cv" role="tabpanel" class="cv">
-          <p><span class="cwd">C:\Users\zojdrek&gt;</span> type cv.txt</p>
-          <h2 class="glow">Curriculum Vitae</h2>
-          <p>Download the PDF below.</p>
-          <a class="btn" href="cv.pdf" download>⬇ Download CV</a>
+          <p><span class="cwd">C:\Users\zdrojewski&gt;</span> type cv.txt</p>
+          <div class="cv-grid">
+            <!-- Sidebar -->
+            <aside class="cv-side">
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Contact</h3>
+                <div class="cv-contact">
+                  <div><b>&gt; location</b><br/>London, UK</div>
+                  <div><b>&gt; email</b><br/><a href="mailto:hello@zdrojewski.dev" style="color:var(--link)">hello@zdrojewski.dev</a></div>
+                  <div><b>&gt; website</b><br/><a href="#home" style="color:var(--link)">zdrojewski.dev</a></div>
+                  <div><b>&gt; linkedin</b><br/><a href="https://www.linkedin.com/in/hubert-zdrojewski-10a2ba253/" target="_blank" rel="noopener" style="color:var(--link)">linkedin.com/in/hubert-zdrojewski…</a></div>
+                </div>
+                <button class="btn" type="button" onclick="downloadCvPdf()" style="margin-top:10px">⬇ Download CV (PDF)</button>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Skills</h3>
+                <div class="tags cv-tags">
+                  <span class="tag">Python</span>
+                  <span class="tag">Java</span>
+                  <span class="tag">HTML</span>
+                  <span class="tag">CSS</span>
+                  <span class="tag">JavaScript</span>
+                  <span class="tag">AI (text & image)</span>
+                  <span class="tag">Streamlit</span>
+                  <span class="tag">Godot 4</span>
+                </div>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Tools</h3>
+                <div class="tags cv-tags">
+                  <span class="tag">Git</span>
+                  <span class="tag">Docker</span>
+                  <span class="tag">PostgreSQL</span>
+                  <span class="tag">Figma</span>
+                  <span class="tag">AWS</span>
+                </div>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Languages</h3>
+                <p class="cv-p">English (native), Polish (native)</p>
+              </div>
+            </aside>
+
+            <!-- Main -->
+            <div class="cv-main">
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Profile</h3>
+                <p class="cv-p">MSci Computer Science student (Year 4) at City, University of London. I build pragmatic, clean interfaces and data tools, with hands‑on experience across Python, Java, and the web stack. Interested in AI (text and image), automation, and polished user experiences.</p>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Coursework & Modules</h3>
+                <div class="cv-entry">
+                  <div class="cv-role">Natural Language Processing</div>
+                  <ul class="cv-list">
+                    <li>Built a sentiment analysis tool for IMDb reviews that replaces star ratings with a positive/negative label, addressing review bombing and rating inconsistency.</li>
+                  </ul>
+                </div>
+                <div class="cv-entry">
+                  <div class="cv-role">Computer Vision</div>
+                  <ul class="cv-list">
+                    <li>Implemented a face‑mask detection model for a simulated government compliance scenario during the pandemic.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Experience</h3>
+                <div class="cv-entry">
+                  <div class="cv-role">Junior Sous Chef <span class="cv-meta">— Spaghetti House, London • 2021–Present</span></div>
+                  <ul class="cv-list">
+                    <li>Led sections during service; coordinated with teams to deliver consistently under pressure.</li>
+                    <li>Improved prep workflows and station organisation to reduce turnaround times.</li>
+                    <li>Applied process discipline and teamwork—skills I bring to engineering projects.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Selected Project</h3>
+                <div class="cv-entry">
+                  <div class="cv-role">Portfolio & Pokémon Collection Manager <span class="cv-meta">— HTML/CSS/JS</span></div>
+                  <ul class="cv-list">
+                    <li>Single‑page “terminal‑style” site with a CSV/JSON‑driven collection browser.</li>
+                    <li>Binders view: set selector, 9/12‑card paging, per‑card ownership, and PriceCharting links.</li>
+                    <li>Mobile‑friendly navigation with a dropdown and hamburger menu.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="kv cv-card">
+                <h3 class="cv-h3">Education</h3>
+                <div class="cv-entry">
+                  <div class="cv-role">MSci Computer Science <span class="cv-meta">— City, University of London • Year 4 (Current)</span></div>
+                  <p class="cv-p">Coursework highlights include software engineering, algorithms, web development, and AI.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- COLLECTION -->
         <section id="collection" role="tabpanel">
-          <p><span class="cwd">C:\Users\zojdrek&gt;</span> collection open</p>
+          <p><span class="cwd">C:\Users\zdrojewski&gt;</span> collection open</p>
 
           <!-- stat tiles -->
           <div class="stats tiles">
@@ -118,7 +216,7 @@
 
         <!-- BINDERS -->
         <section id="binders" role="tabpanel">
-          <p><span class="cwd">C:\Users\zojdrek&gt;</span> binders open</p>
+          <p><span class="cwd">C:\Users\zdrojewski&gt;</span> binders open</p>
           <div class="kv" id="binders-status" style="opacity:.85">
             <b>&gt; binders</b><br/>
             Loading binder config from collections/config.csv…
@@ -143,8 +241,10 @@
       </div>
     </main>
 
-    <footer>© <span id="year"></span> zojdrek.dev — CMD-style portfolio</footer>
+    <footer>© <span id="year"></span> zdrojewski.dev — CMD-style portfolio</footer>
   </div>
+  <!-- html2pdf for client-side PDF generation (includes html2canvas + jsPDF). No defer so it's ready on click. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-YcsIPqYgqQx5kM1i0b8i6PD7a7b8k2e2n5m8CWH0a4sT2lP2fX0v1d2f0mHPkSxEw3w0w2Oe0R2tWw7H5x+4AQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="script.js"></script>
 </body>
 </html>
