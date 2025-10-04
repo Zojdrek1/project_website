@@ -99,7 +99,7 @@
   /* ===== CV Layout ===== */
   .cv-name{ margin: 0 0 12px; font-size: clamp(22px, 4.5vw, 28px); font-weight: 800; color: var(--text); letter-spacing:.3px; }
   .cv-subtitle{ margin: -6px 0 12px; color:#bdbdbd; font-size: 14px; }
-  .cv-grid{ display:grid; grid-template-columns: 1fr 2fr; gap:14px; align-items:start; }
+  .cv-grid{ display:grid; grid-template-columns: 1fr 2fr; gap:14px; align-items:start; grid-template-areas: 'side main'; }
   .cv-card{ padding:14px 14px; }
   .cv-h3{ margin:0 0 10px; font-size:16px; color:var(--accent); }
   .cv-contact{ display:grid; gap:8px; }
@@ -109,8 +109,9 @@
   .cv-role{ font-weight:600; color:#e6e6e6; margin-bottom:6px; }
   .cv-meta{ color:#a8a8a8; font-weight:500; }
   .cv-list{ margin:0; padding-left:18px; color:#cfcfcf; }
-  .cv-side{ display:flex; flex-direction:column; gap:14px; }
-  .cv-main{ display:flex; flex-direction:column; gap:14px; }
+  .cv-side{ display:flex; flex-direction:column; gap:14px; grid-area: side; }
+  .cv-main{ display:flex; flex-direction:column; gap:14px; grid-area: main; }
+  .cv-contact a{ word-break: break-word; overflow-wrap: anywhere; }
   .cv-export .cv-name{ color:#000; }
   .cv-export .cv-subtitle{ color:#333; }
 
@@ -187,9 +188,29 @@
   @media (max-width: 900px){
     .container{ margin: 28px auto; }
     .screen{ padding: 18px; }
-    .cv-grid{ grid-template-columns: 1fr; }
+    .cv-grid{ grid-template-columns: 1fr; grid-template-areas: 'main' 'side'; gap:12px; }
+    .cv-name{ font-size: clamp(20px, 5.5vw, 26px); }
+    .cv-subtitle{ font-size: 13px; }
+    .cv-card{ padding:12px; }
+    .cv-h3{ font-size:15px; }
+    .cv-list{ font-size:14px; }
+    .cv-p{ font-size:14px; }
     .collect-controls{ grid-template-columns: 1fr 1fr; }
     .collect-controls .collect-lang{ grid-column: 1 / -1; }
+  }
+
+  @media (max-width: 700px){
+    .cv-grid{ gap:10px; }
+    .cv-card{ padding:12px; }
+    .cv-tags .tag{ font-size:11.5px; }
+  }
+
+  @media (max-width: 480px){
+    .cv-name{ font-size: clamp(18px, 6vw, 22px); }
+    .cv-subtitle{ font-size: 12px; }
+    .cv-h3{ font-size:14px; }
+    .cv-list, .cv-p{ font-size:13px; }
+    .cv-tags .tag{ font-size:11px; }
   }
 
   /* ===== Print to PDF (CV only) ===== */
