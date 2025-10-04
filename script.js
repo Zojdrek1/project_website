@@ -19,8 +19,21 @@ const panels = {
   collection: document.getElementById('collection'),
   binders: document.getElementById('binders')
 };
+function parseHash(){
+  const raw = String(location.hash || '#home');
+  const [base, qs] = raw.split('?');
+  const route = (base || '#home').replace('#','') || 'home';
+  const params = new URLSearchParams(qs || '');
+  return { route, params };
+}
+function writeHash(route, params){
+  const qs = params && [...params.entries()].length ? (`?${params.toString()}`) : '';
+  const next = `#${route}${qs}`;
+  if (location.hash !== next) location.hash = next;
+}
 function setRoute(r){
-  const route = (r || location.hash || '#home').replace('#','') || 'home';
+  const parsed = parseHash();
+  const route = (r || parsed.route || 'home');
   Object.values(panels).forEach(p => p && p.classList.remove('active'));
   (panels[route] || panels.home).classList.add('active');
   links.forEach(a => a.classList.toggle('active', a.dataset.route === route));
@@ -34,10 +47,11 @@ function setRoute(r){
   if (hb) hb.setAttribute('aria-expanded', 'false');
   document.body.classList.remove('menu-open');
   if (route === 'collection') initCollection(); // lazy
-  if (route === 'binders') initBinders(); // lazy
+  if (route === 'binders') initBinders(parsed.params); // lazy, pass params
+  try { localStorage.setItem('route', route); } catch(_) {}
 }
-window.addEventListener('hashchange', () => setRoute(location.hash));
-setRoute(location.hash);
+window.addEventListener('hashchange', () => setRoute());
+setRoute(localStorage.getItem('route') || parseHash().route);
 
 /* Mobile-friendly dropdown: tap to open/close */
 function setupDropdownBehavior(){
@@ -76,11 +90,12 @@ function setupHamburger(){
     document.body.classList.toggle('menu-open', open);
     btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   };
-  btn.addEventListener('click', (e) => { e.preventDefault(); toggle(); });
+  btn.addEventListener('click', (e) => { e.preventDefault(); toggle(); if (document.body.classList.contains('menu-open')) { const first = document.querySelector('#main-nav a, #main-nav .drop-trigger'); if (first) first.focus(); } });
   document.addEventListener('click', (e) => {
     if (!nav.contains(e.target) && e.target !== btn){
       document.body.classList.remove('menu-open');
       btn.setAttribute('aria-expanded', 'false');
+      btn.focus();
     }
   });
   window.addEventListener('resize', () => {
@@ -466,7 +481,8 @@ function renderBinders(sets){
     pagesWrap.className = 'binder-pages';
     const size = Number(Binders.pageSize) === 12 ? 12 : 9;
     const cols = size === 12 ? 4 : 3;
-    const pages = chunk(set.cards, size);
+    const list = Binders.ownedOnly ? set.cards.filter(c => (Binders.ownedQty.get(canonicalLookup(c.lookup))||0) > 0) : set.cards;
+    const pages = chunk(list, size);
     Binders.totalPages = Math.max(1, pages.length);
     if (Binders.currentPage >= Binders.totalPages) Binders.currentPage = Binders.totalPages - 1;
     const pg = pages[Binders.currentPage] || [];
@@ -545,10 +561,23 @@ async function showSelectedBinder(file){
   const stats = computeSetStats(data.cards);
   const ct = computeCollectionTotals(data.cards);
   setBindersStatus(`<b>${data.name}</b><br/>Owned: ${stats.owned} / ${stats.total} • ${stats.pct}%<br/>In set: ${ct.qtySum} cards`);
+  // persist + deep link
+  try{
+    localStorage.setItem('binders.file', row.file);
+    localStorage.setItem('binders.pageSize', String(Binders.pageSize));
+    localStorage.setItem('binders.page', String(Binders.currentPage));
+    localStorage.setItem('binders.ownedOnly', String(Binders.ownedOnly));
+  }catch(_){ }
+  const params = new URLSearchParams();
+  params.set('file', row.file);
+  params.set('ps', String(Binders.pageSize));
+  params.set('pg', String(Binders.currentPage+1));
+  if (Binders.ownedOnly) params.set('owned','1');
+  writeHash('binders', params);
   // no animations
 }
 
-async function initBinders(){
+async function initBinders(params){
   if (bindersRendered) return; // already initialized; user can change dropdown
   try{
     setBindersStatus('Loading binder config from collections/config.csv…');
@@ -589,8 +618,21 @@ async function initBinders(){
       });
       next._bound = true;
     }
-    if (sel && sel.value){ await showSelectedBinder(sel.value); }
-    else { await showSelectedBinder(Binders.config[0].file); if (sel) sel.value = Binders.config[0].file; }
+    // Owned only toggle
+    const own = document.getElementById('binders-owned-only');
+    if (own && !own._bound){ own.addEventListener('change', ()=>{ Binders.ownedOnly = !!own.checked; Binders.currentPage = 0; if (Binders.currentFile) showSelectedBinder(Binders.currentFile); }); own._bound = true; }
+    // Restore from params/localStorage
+    try{
+      const storedFile = params?.get('file') || localStorage.getItem('binders.file');
+      const storedPS = Number(params?.get('ps') || localStorage.getItem('binders.pageSize') || 9);
+      const storedPG = Number(params?.get('pg') || localStorage.getItem('binders.page') || 1);
+      const storedOwned = (params?.get('owned') || localStorage.getItem('binders.ownedOnly'));
+      if (storedPS === 12){ const r = document.getElementById('pages-12'); if (r) r.checked = true; Binders.pageSize = 12; }
+      if (typeof storedOwned === 'string'){ Binders.ownedOnly = (storedOwned === '1' || storedOwned === 'true'); if (own) own.checked = Binders.ownedOnly; }
+      if (storedFile && sel) sel.value = storedFile;
+      await showSelectedBinder(storedFile || (Binders.config[0] && Binders.config[0].file));
+      if (storedPG && !isNaN(storedPG)){ Binders.currentPage = Math.max(0, storedPG-1); if (Binders.currentFile) await showSelectedBinder(Binders.currentFile); }
+    }catch(_){ await showSelectedBinder(Binders.config[0].file); if (sel) sel.value = Binders.config[0].file; }
     bindersRendered = true;
   }catch(err){
     console.error(err);
@@ -779,6 +821,8 @@ function updateStats(){
   if (elU) elU.innerHTML = fmtInt(uniqueCards) + (delta ? ` <span class="tile-delta">${sign(delta.uniqueCards)}</span>` : '');
   if (elR) elR.innerHTML = fmtMoney(totalRaw) + (delta ? ` <span class="tile-delta">${signMoney(delta.totalRaw)}</span>` : '');
   if (elP) elP.innerHTML = fmtMoney(totalPSA10) + (delta ? ` <span class="tile-delta">${signMoney(delta.totalPSA10)}</span>` : '');
+  const note = document.getElementById('stat-note');
+  if (note) note.textContent = (delta ? 'vs previous snapshot' : '');
 }
 
 /* --- infinite scroll render --- */
