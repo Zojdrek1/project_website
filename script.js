@@ -1,6 +1,7 @@
 /* ---------- simple global to avoid TDZ error ---------- */
 var collectionRendered = false;
 var bindersRendered = false;
+var OldCollection = { data: [], loaded: false };
 
 /* ---------- typewriter prompt ---------- */
 const typed = document.getElementById('typed');
@@ -109,47 +110,34 @@ async function downloadCvPdf(){
     if (!el) { alert('CV section not found'); return; }
     const ok = await ensureHtml2PdfLoaded();
     if (!ok){ alert('PDF generator not available. Add vendor/html2pdf.bundle.min.js or retry online.'); return; }
-    // Build an off-screen export container to avoid viewport clipping
+    // Scale the on-screen CV to fit one A4 page and render it with a big virtual viewport
     const MM_TO_PX = 3.7795275591; // 96dpi
     const a4 = { wmm:210, hmm:297 };
     const margin = { top:10, right:10, bottom:10, left:10 };
-    const contentWidthPx = Math.floor((a4.wmm - margin.left - margin.right) * MM_TO_PX); // ~718px
-    const contentHeightPx = Math.floor((a4.hmm - margin.top - margin.bottom) * MM_TO_PX); // ~1046px
+    const pageHpx = Math.floor((a4.hmm - margin.top - margin.bottom) * MM_TO_PX); // ~1046px
 
-    const wrapper = document.createElement('div');
-    wrapper.style.position = 'fixed';
-    wrapper.style.top = '0';
-    wrapper.style.left = '0';
-    wrapper.style.zIndex = '-1'; // behind everything but still rendered
-    wrapper.style.background = '#ffffff';
-    wrapper.style.padding = '0';
-    document.body.appendChild(wrapper);
+    // Save and adjust styles
+    const prev = { transform: el.style.transform, origin: el.style.transformOrigin, width: el.style.width };
+    el.classList.add('cv-export');
+    const contentH = el.scrollHeight;
+    let scale = 1; if (contentH > pageHpx) scale = pageHpx / contentH;
+    el.style.transformOrigin = 'top left';
+    el.style.transform = `scale(${scale})`;
+    el.style.width = `${100/scale}%`;
 
-    const inner = document.createElement('div');
-    inner.className = 'cv-export';
-    inner.style.width = contentWidthPx + 'px';
-    inner.innerHTML = el.innerHTML; // clone content only
-    wrapper.appendChild(inner);
-
-    // If content is taller than one page, scale it down to fit
-    const h = inner.scrollHeight;
-    let scale = 1;
-    if (h > contentHeightPx) scale = contentHeightPx / h;
-    if (scale < 1){
-      inner.style.transformOrigin = 'top left';
-      inner.style.transform = `scale(${scale})`;
-      inner.style.width = (contentWidthPx/scale) + 'px';
-    }
-
+    const windowWidth = Math.max(document.documentElement.clientWidth, el.scrollWidth);
+    const windowHeight = Math.max(document.documentElement.clientHeight, el.scrollHeight);
     const opt = {
       margin:[margin.top, margin.left, margin.bottom, margin.right],
       filename:'Hubert_Zdrojewski_CV.pdf',
       image:{type:'jpeg',quality:0.98},
-      html2canvas:{scale:2,useCORS:true,backgroundColor:'#FFFFFF',logging:false},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#FFFFFF',windowWidth,windowHeight,scrollX:0,scrollY:0},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
     };
-    await html2pdf().from(wrapper).set(opt).save();
-    document.body.removeChild(wrapper);
+    await html2pdf().from(el).set(opt).save();
+    // Restore styles
+    el.style.transform = prev.transform; el.style.transformOrigin = prev.origin; el.style.width = prev.width;
+    el.classList.remove('cv-export');
   }catch(e){ console.error(e); alert('Failed to generate PDF.'); }
 }
 
@@ -181,8 +169,13 @@ const y = document.getElementById('year'); if (y) y.textContent = new Date().get
    Collection data + filters
    ========================= */
 
-/* Resolve cards.json absolutely (handles spaces / [brackets] in path) */
-const CARDS_URL = new URL('cache/cards.json', location.href).toString();
+/* Resolve cards.json absolutely (handles spaces / [brackets] in path)
+   Also support fallback to archived file at cache/Old_cards/cards.json */
+const CARDS_URLS = [
+  new URL('cache/cards.json', location.href).toString(),
+  new URL('cache/Old_cards/cards.json', location.href).toString()
+];
+var collectionSource = 'current'; // 'current' | 'old'
 
 function showStatus(msg, withRetry=false){
   const grid = document.getElementById('collect-grid');
@@ -198,40 +191,65 @@ function showStatus(msg, withRetry=false){
 }
 
 async function loadCollectionData(timeoutMs = 20000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-
-  console.time('cards.json fetch');
-  console.log('[collection] fetching:', CARDS_URL);
-
-  try {
-    const res = await fetch(CARDS_URL, { cache: "no-store", signal: ctrl.signal });
-    console.log('[collection] response:', res.status, res.statusText);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    let json;
-    try {
-      json = await res.json();
-    } catch (e) {
-      const txt = await res.text();
-      console.error('[collection] JSON parse error. First 200 chars:', txt.slice(0,200));
-      throw new Error("cards.json not valid JSON");
+  let lastErr = null;
+  for (let i = 0; i < CARDS_URLS.length; i++){
+    const url = CARDS_URLS[i];
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    console.time(`[collection] fetch ${i===0?'current':'old'} cards.json`);
+    console.log('[collection] fetching:', url);
+    try{
+      const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+      console.log('[collection] response:', res.status, res.statusText);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let json;
+      try { json = await res.json(); }
+      catch(e){
+        const txt = await res.text();
+        console.error('[collection] JSON parse error. First 200 chars:', txt.slice(0,200));
+        throw new Error('cards.json not valid JSON');
+      }
+      // normalize: array or {data:[]}/{cards:[]}/object-map
+      let data = [];
+      if (Array.isArray(json)) data = json;
+      else if (json && Array.isArray(json.data)) data = json.data;
+      else if (json && Array.isArray(json.cards)) data = json.cards;
+      else if (json && typeof json === 'object')
+        data = Object.values(json).filter(v => v && typeof v === 'object' && (('Name' in v) || ('lookupID' in v)));
+      console.log('[collection] loaded rows:', data.length);
+      collectionSource = (i === 0 ? 'current' : 'old');
+      return Array.isArray(data) ? data : [];
+    }catch(err){
+      console.warn('[collection] failed to load from', url, err);
+      lastErr = err;
+    }finally{
+      clearTimeout(t);
+      console.timeEnd(`[collection] fetch ${i===0?'current':'old'} cards.json`);
     }
+  }
+  throw lastErr || new Error('Failed to load cards.json from all sources');
+}
 
-    // normalize: array or {data:[]}/{cards:[]}/object-map
+async function loadOldCollectionData(timeoutMs = 20000){
+  const url = CARDS_URLS[1];
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    console.log('[collection] fetching baseline old cards:', url);
+    const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let json = await res.json();
     let data = [];
     if (Array.isArray(json)) data = json;
     else if (json && Array.isArray(json.data)) data = json.data;
     else if (json && Array.isArray(json.cards)) data = json.cards;
     else if (json && typeof json === 'object')
       data = Object.values(json).filter(v => v && typeof v === 'object' && (('Name' in v) || ('lookupID' in v)));
-
-    console.log('[collection] loaded rows:', data.length);
-    return Array.isArray(data) ? data : [];
-  } finally {
-    clearTimeout(t);
-    console.timeEnd('cards.json fetch');
-  }
+    OldCollection.data = Array.isArray(data) ? data : [];
+    OldCollection.loaded = true;
+    console.log('[collection] baseline rows:', OldCollection.data.length);
+  }catch(e){ console.warn('[collection] baseline not available:', e.message || e); }
 }
 
 /* =========================
@@ -717,14 +735,50 @@ function applySort(){
 }
 
 function updateStats(){
+  const fmtInt = (v)=> Number(v||0).toLocaleString('en-GB');
+  const fmtMoney = (v)=> '£' + Number(v||0).toLocaleString('en-GB', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const sign = (v)=> (v>0?'+':'') + (Math.abs(Number(v||0))).toLocaleString('en-GB');
+  const signMoney = (v)=> (v>0?'+':'') + '£' + Math.abs(Number(v||0)).toLocaleString('en-GB', { minimumFractionDigits:2, maximumFractionDigits:2 });
+
   const totalCards = Collection.filtered.reduce((a,c)=> a + n(c.Quantity), 0);
   const uniqueCards = Collection.filtered.length;
   const totalRaw = Collection.filtered.reduce((a,c)=> a + n(c["Raw Total"] || (n(c["Raw Price"]) * n(c.Quantity))), 0);
   const totalPSA10 = Collection.filtered.reduce((a,c)=> a + (n(c["PSA 10 Price"]) * n(c.Quantity)), 0);
-  Collection.els.statTotal().textContent = String(totalCards);
-  Collection.els.statUnique().textContent = String(uniqueCards);
-  Collection.els.statRaw().textContent = '£' + totalRaw.toFixed(2);
-  Collection.els.statPSA().textContent = '£' + totalPSA10.toFixed(2);
+
+  let delta = null;
+  if (OldCollection.loaded && OldCollection.data && OldCollection.data.length){
+    // apply same filters to old dataset
+    const q = Collection.filters.q.trim().toLowerCase();
+    const set = Collection.filters.set;
+    const lang = Collection.filters.lang;
+    const oldFiltered = OldCollection.data.filter(c => {
+      const hay = `${c.Name||''} ${c.Set||''} ${c.lookupID||''} ${c.ID||''}`.toLowerCase();
+      const matchesQ = !q || hay.includes(q);
+      const matchesSet = !set || (c.Set === set);
+      const cardLang = languageFromCard(c);
+      const matchesLang = (lang === 'both') || (cardLang === lang);
+      return matchesQ && matchesSet && matchesLang;
+    });
+    const oldTotalCards = oldFiltered.reduce((a,c)=> a + n(c.Quantity), 0);
+    const oldUnique = oldFiltered.length;
+    const oldRaw = oldFiltered.reduce((a,c)=> a + n(c["Raw Total"] || (n(c["Raw Price"]) * n(c.Quantity))), 0);
+    const oldPSA = oldFiltered.reduce((a,c)=> a + (n(c["PSA 10 Price"]) * n(c.Quantity)), 0);
+    delta = {
+      totalCards: totalCards - oldTotalCards,
+      uniqueCards: uniqueCards - oldUnique,
+      totalRaw: totalRaw - oldRaw,
+      totalPSA10: totalPSA10 - oldPSA
+    };
+  }
+
+  const elT = Collection.els.statTotal();
+  const elU = Collection.els.statUnique();
+  const elR = Collection.els.statRaw();
+  const elP = Collection.els.statPSA();
+  if (elT) elT.innerHTML = fmtInt(totalCards) + (delta ? ` <span class="tile-delta">${sign(delta.totalCards)}</span>` : '');
+  if (elU) elU.innerHTML = fmtInt(uniqueCards) + (delta ? ` <span class="tile-delta">${sign(delta.uniqueCards)}</span>` : '');
+  if (elR) elR.innerHTML = fmtMoney(totalRaw) + (delta ? ` <span class="tile-delta">${signMoney(delta.totalRaw)}</span>` : '');
+  if (elP) elP.innerHTML = fmtMoney(totalPSA10) + (delta ? ` <span class="tile-delta">${signMoney(delta.totalPSA10)}</span>` : '');
 }
 
 /* --- infinite scroll render --- */
@@ -886,6 +940,8 @@ async function initCollection(force=false){
 
     clearTimeout(loadingGuard);
     reflow();
+    // load baseline and refresh stats once available
+    loadOldCollectionData(20000).then(()=>{ try{ updateStats(); }catch(e){} });
     // ensure first batch shows after layout settles
     requestAnimationFrame(() => reflow());
 
