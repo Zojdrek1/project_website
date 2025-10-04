@@ -371,6 +371,12 @@
 .binders-lang label{ padding:8px 12px; cursor:pointer; color:#cfcfcf; background:#0b0b0b; user-select:none; }
 .binders-lang label + input + label{ border-left:1px solid #1f1f1f; }
 .binders-lang input:checked + label{ color:var(--accent); background:#0e0e0e; }
+
+/* Keep the Binders set dropdown a stable width on desktop */
+.binders-select{ width:auto; }
+@media (max-width: 600px){
+  .binders-select{ width:100%; }
+}
 .binders-list{ display:flex; flex-direction:column; gap:16px; }
 .binder-set{ border:1px dashed #1f1f1f; border-radius:10px; background:#0c0c0c; padding:12px; }
 .binder-set h3{ margin:0 0 10px; color:var(--accent); font-size:16px; display:flex; align-items:center; gap:10px; }

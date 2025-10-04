@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0c0c0c">
-  <title>zdrojewski.dev — terminal portfolio</title>
+  <title>Project Hub</title>
   <meta name="description" content="zdrojewski.dev — terminal-style portfolio (Home, Projects, CV, Collection)" />
   <link rel="stylesheet" href="style.css">
 </head>
@@ -233,6 +233,12 @@
           <div class="binders-controls kv">
             <label for="binders-select" style="display:none">Choose set</label>
             <select id="binders-select" class="binders-select" aria-label="Choose set"></select>
+            <div class="binders-lang" id="binders-lang" role="radiogroup" aria-label="Language">
+              <input type="radio" id="lang-en" name="binders-lang" value="english" checked>
+              <label for="lang-en">English</label>
+              <input type="radio" id="lang-ja" name="binders-lang" value="japanese">
+              <label for="lang-ja">Japanese</label>
+            </div>
             <div class="binders-pages" id="binders-pages" role="radiogroup" aria-label="Cards per page">
               <input type="radio" id="pages-9" name="binders-pages" value="9" checked>
               <label for="pages-9">9 / page</label>
@@ -244,20 +250,13 @@
               <span id="binders-page-indicator" class="binders-page-indicator" aria-live="polite">Page 1/1</span>
               <button id="binders-next" class="btn" type="button" aria-label="Next page">Next ▶</button>
             </div>
-            <div class="binders-lang" id="binders-lang" role="radiogroup" aria-label="Language">
-              <input type="radio" id="lang-en" name="binders-lang" value="english" checked>
-              <label for="lang-en">English</label>
-              <input type="radio" id="lang-ja" name="binders-lang" value="japanese">
-              <label for="lang-ja">Japanese</label>
-            </div>
-            <label class="owned-toggle"><input type="checkbox" id="binders-owned-only"> Owned only</label>
           </div>
           <div id="binders-content" class="binders-list"></div>
         </section>
       </div>
     </main>
 
-    <footer>© <span id="year"></span> zdrojewski.dev — CMD-style portfolio</footer>
+    <footer>© <span id="year"></span> zdrojewski.dev — My Programmign Hub - Passion Projects & Portfolio</footer>
   </div>
   <!-- html2pdf for client-side PDF generation (includes html2canvas + jsPDF). No defer so it's ready on click. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-YcsIPqYgqQx5kM1i0b8i6PD7a7b8k2e2n5m8CWH0a4sT2lP2fX0v1d2f0mHPkSxEw3w0w2Oe0R2tWw7H5x+4AQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>

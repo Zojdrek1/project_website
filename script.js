@@ -284,6 +284,7 @@ const Binders = {
   ownedQty: new Map(), // canonical lookup -> quantity
   currentPage: 0,
   totalPages: 1,
+  lang: 'english',
   els: {
     status: () => document.getElementById('binders-status'),
     content: () => document.getElementById('binders-content'),
@@ -486,8 +487,7 @@ function renderBinders(sets){
     pagesWrap.className = 'binder-pages';
     const size = Number(Binders.pageSize) === 12 ? 12 : 9;
     const cols = size === 12 ? 4 : 3;
-    const list = Binders.ownedOnly ? set.cards.filter(c => (Binders.ownedQty.get(canonicalLookup(c.lookup))||0) > 0) : set.cards;
-    const pages = chunk(list, size);
+    const pages = chunk(set.cards, size);
     Binders.totalPages = Math.max(1, pages.length);
     if (Binders.currentPage >= Binders.totalPages) Binders.currentPage = Binders.totalPages - 1;
     const pg = pages[Binders.currentPage] || [];
@@ -552,10 +552,37 @@ function buildBindersSelect(){
   const inLang = (r) => detectSetLanguage(r) === (Binders.lang || 'english');
   const items = Binders.config.filter(inLang);
   sel.innerHTML = items.map((r) => {
-    const name = (r.name || 'Untitled').replace(/"/g,'&quot;');
-    const file = (r.file || '').replace(/"/g,'&quot;');
+    const raw = (r.name || 'Untitled');
+    const cleaned = (typeof cleanSetLabel === 'function')
+      ? cleanSetLabel(raw)
+      : String(raw).replace(/^\s*\[(?:english|japanese|japansese)\]\s*/i, '').trim();
+    const name = cleaned.replace(/\"/g,'&quot;').replace(/"/g,'&quot;');
+    const file = (r.file || '').replace(/\"/g,'&quot;').replace(/"/g,'&quot;');
     return `<option value="${file}">${name}</option>`;
   }).join('');
+  autosizeBindersSelect();
+}
+
+function autosizeBindersSelect(){
+  const sel = Binders.els.select(); if (!sel) return;
+  // On small screens, keep natural or 100% width
+  if (window.matchMedia && window.matchMedia('(max-width: 600px)').matches){ sel.style.width = ''; return; }
+  const cs = getComputedStyle(sel);
+  const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const canvas = autosizeBindersSelect._canvas || (autosizeBindersSelect._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+  let max = 0;
+  for (const opt of sel.options){
+    const text = opt.text || '';
+    const w = ctx.measureText(text).width;
+    if (w > max) max = w;
+  }
+  const pad = parseFloat(cs.paddingLeft)||0 + parseFloat(cs.paddingRight)||0;
+  const border = parseFloat(cs.borderLeftWidth)||0 + parseFloat(cs.borderRightWidth)||0;
+  const chevron = 28; // room for native arrow
+  const total = Math.ceil(max + pad + border + chevron);
+  sel.style.width = `${total}px`;
 }
 
 async function showSelectedBinder(file){
@@ -585,7 +612,6 @@ async function showSelectedBinder(file){
     localStorage.setItem('binders.file', chosen.file);
     localStorage.setItem('binders.pageSize', String(Binders.pageSize));
     localStorage.setItem('binders.page', String(Binders.currentPage));
-    localStorage.setItem('binders.ownedOnly', String(Binders.ownedOnly));
     localStorage.setItem('binders.lang', String(Binders.lang || 'english'));
   }catch(_){ }
   const params = new URLSearchParams();
@@ -593,7 +619,6 @@ async function showSelectedBinder(file){
   params.set('ps', String(Binders.pageSize));
   params.set('pg', String(Binders.currentPage+1));
   params.set('lang', String(Binders.lang || 'english'));
-  if (Binders.ownedOnly) params.set('owned','1');
   writeHash('binders', params);
   // no animations
 }
@@ -647,7 +672,7 @@ async function initBinders(params){
         r.addEventListener('change', () => {
           const val = document.querySelector('input[name="binders-lang"]:checked')?.value || 'english';
           Binders.lang = (val === 'japanese') ? 'japanese' : 'english';
-          buildBindersSelect();
+          buildBindersSelect(); autosizeBindersSelect();
           const selEl = Binders.els.select();
           if (selEl){ Binders.currentPage = 0; showSelectedBinder(selEl.value); }
         });
@@ -660,18 +685,14 @@ async function initBinders(params){
       });
       next._bound = true;
     }
-    // Owned only toggle
-    const own = document.getElementById('binders-owned-only');
-    if (own && !own._bound){ own.addEventListener('change', ()=>{ Binders.ownedOnly = !!own.checked; Binders.currentPage = 0; if (Binders.currentFile) showSelectedBinder(Binders.currentFile); }); own._bound = true; }
     // Restore from params/localStorage
     try{
       const storedFile = params?.get('file') || localStorage.getItem('binders.file');
       const storedPS = Number(params?.get('ps') || localStorage.getItem('binders.pageSize') || 9);
       const storedPG = Number(params?.get('pg') || localStorage.getItem('binders.page') || 1);
-      const storedOwned = (params?.get('owned') || localStorage.getItem('binders.ownedOnly'));
       if (storedPS === 12){ const r = document.getElementById('pages-12'); if (r) r.checked = true; Binders.pageSize = 12; }
-      if (typeof storedOwned === 'string'){ Binders.ownedOnly = (storedOwned === '1' || storedOwned === 'true'); if (own) own.checked = Binders.ownedOnly; }
       if (storedFile && sel) sel.value = storedFile;
+      autosizeBindersSelect();
       await showSelectedBinder(storedFile || (Binders.config[0] && Binders.config[0].file));
       if (storedPG && !isNaN(storedPG)){ Binders.currentPage = Math.max(0, storedPG-1); if (Binders.currentFile) await showSelectedBinder(Binders.currentFile); }
     }catch(_){ await showSelectedBinder(Binders.config[0].file); if (sel) sel.value = Binders.config[0].file; }
