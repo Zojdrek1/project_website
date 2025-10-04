@@ -185,11 +185,14 @@ const y = document.getElementById('year'); if (y) y.textContent = new Date().get
    ========================= */
 
 /* Resolve cards.json absolutely (handles spaces / [brackets] in path)
-   Also support fallback to archived file at cache/Old_cards/cards.json */
-const CARDS_URLS = [
-  new URL('cache/cards.json', location.href).toString(),
-  new URL('cache/Old_cards/cards.json', location.href).toString()
-];
+   Also support fallback to archived file (several case/spelling variants for safety on case‑sensitive hosts) */
+const CARDS_URLS = [ new URL('cache/cards.json', location.href).toString() ];
+const BASELINE_URLS = [
+  'cache/Old_cards/cards.json',
+  'cache/old_cards/cards.json',
+  'cache/Old_Cards/cards.json',
+  'cache/old-cards/cards.json'
+].map(p => new URL(p, location.href).toString());
 var collectionSource = 'current'; // 'current' | 'old'
 
 function showStatus(msg, withRetry=false){
@@ -232,7 +235,7 @@ async function loadCollectionData(timeoutMs = 20000) {
       else if (json && typeof json === 'object')
         data = Object.values(json).filter(v => v && typeof v === 'object' && (('Name' in v) || ('lookupID' in v)));
       console.log('[collection] loaded rows:', data.length);
-      collectionSource = (i === 0 ? 'current' : 'old');
+      collectionSource = 'current';
       return Array.isArray(data) ? data : [];
     }catch(err){
       console.warn('[collection] failed to load from', url, err);
@@ -246,25 +249,27 @@ async function loadCollectionData(timeoutMs = 20000) {
 }
 
 async function loadOldCollectionData(timeoutMs = 20000){
-  const url = CARDS_URLS[1];
-  try{
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    console.log('[collection] fetching baseline old cards:', url);
-    const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
-    clearTimeout(t);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let json = await res.json();
-    let data = [];
-    if (Array.isArray(json)) data = json;
-    else if (json && Array.isArray(json.data)) data = json.data;
-    else if (json && Array.isArray(json.cards)) data = json.cards;
-    else if (json && typeof json === 'object')
-      data = Object.values(json).filter(v => v && typeof v === 'object' && (('Name' in v) || ('lookupID' in v)));
-    OldCollection.data = Array.isArray(data) ? data : [];
-    OldCollection.loaded = true;
-    console.log('[collection] baseline rows:', OldCollection.data.length);
-  }catch(e){ console.warn('[collection] baseline not available:', e.message || e); }
+  for (const url of BASELINE_URLS){
+    try{
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      console.log('[collection] fetching baseline old cards:', url);
+      const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let json = await res.json();
+      let data = [];
+      if (Array.isArray(json)) data = json;
+      else if (json && Array.isArray(json.data)) data = json.data;
+      else if (json && Array.isArray(json.cards)) data = json.cards;
+      else if (json && typeof json === 'object')
+        data = Object.values(json).filter(v => v && typeof v === 'object' && (('Name' in v) || ('lookupID' in v)));
+      OldCollection.data = Array.isArray(data) ? data : [];
+      OldCollection.loaded = true;
+      console.log('[collection] baseline rows:', OldCollection.data.length, 'from', url);
+      return;
+    }catch(e){ console.warn('[collection] baseline not available at', url, e.message || e); }
+  }
 }
 
 /* =========================
