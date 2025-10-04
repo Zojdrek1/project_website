@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0c0c0c">
+  <title>zojdrek.dev — terminal portfolio</title>
+  <meta name="description" content="zojdrek.dev — terminal-style portfolio (Home, Projects, CV, Collection)" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container crt">
+    <header class="site">
+      <div class="brand glow">zojdrek.dev <small>// programming hub</small></div>
+      <button class="hamburger" id="hamburger" aria-label="Open menu" aria-controls="main-nav" aria-expanded="false">
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+      </button>
+      <nav class="commands" id="main-nav">
+        <a href="#home" data-route="home" class="active">home</a>
+        <a href="#projects" data-route="projects">projects</a>
+        <a href="#cv" data-route="cv">cv</a>
+        <div class="dropdown">
+          <button class="drop-trigger" type="button" aria-haspopup="true" aria-expanded="false">pokemon ▾</button>
+          <div class="drop-menu" role="menu">
+            <a href="#collection" data-route="collection" role="menuitem">collection</a>
+            <a href="#binders" data-route="binders" role="menuitem">binders</a>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main class="terminal">
+      <div class="titlebar">
+        <div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
+        <div class="win-title">cmd — zojdrek.dev</div>
+      </div>
+      <div class="screen" id="screen" tabindex="0">
+
+        <!-- prompt line -->
+        <div class="prompt" aria-label="shell prompt">
+          <span class="cwd">C:\Users\zojdrek&gt;</span>
+          <span id="typed" class="glow" aria-live="polite"></span>
+          <span class="caret" aria-hidden="true"></span>
+        </div>
+
+        <!-- HOME -->
+        <section id="home" role="tabpanel" class="active">
+          <div class="hero">
+            <h1 class="glow">Hi, I’m Hubert — I build clean, pragmatic software.</h1>
+            <p>Use the <b>home</b>, <b>projects</b>, <b>cv</b>, and <b>collection</b> commands, or click the buttons above.</p>
+            <div class="keyvals">
+              <div class="kv"><b>&gt; tech stack</b><br/>Python • Streamlit • SwiftUI • Godot 4 • Haskell • React</div>
+              <div class="kv"><b>&gt; focus</b><br/>Data tools, UI/UX polish, performance, developer experience (DX), automation, AI, software engineering, game development</div>
+              <div class="kv"><b>&gt; contact</b><br/><a href="mailto:hello@zojdrek.dev" style="color:var(--link)">hello@zojdrek.dev</a></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PROJECTS -->
+        <section id="projects" role="tabpanel">
+          <p><span class="cwd">C:\Users\zojdrek&gt;</span> dir projects</p>
+          <div class="projects">
+            <article class="card">
+              <h3>Money Manager</h3>
+              <p>SwiftUI app for tracking bills, savings, and travel costs.</p>
+              <div class="tags"><span class="tag">SwiftUI</span><span class="tag">iOS</span></div>
+            </article>
+            <article class="card">
+              <h3>Data Tools</h3>
+              <p>Python + Streamlit utilities for analysis and automation.</p>
+              <div class="tags"><span class="tag">Python</span><span class="tag">Streamlit</span></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- CV -->
+        <section id="cv" role="tabpanel" class="cv">
+          <p><span class="cwd">C:\Users\zojdrek&gt;</span> type cv.txt</p>
+          <h2 class="glow">Curriculum Vitae</h2>
+          <p>Download the PDF below.</p>
+          <a class="btn" href="cv.pdf" download>⬇ Download CV</a>
+        </section>
+
+        <!-- COLLECTION -->
+        <section id="collection" role="tabpanel">
+          <p><span class="cwd">C:\Users\zojdrek&gt;</span> collection open</p>
+
+          <!-- stat tiles -->
+          <div class="stats tiles">
+            <div class="tile"><b>&gt; total cards</b><div class="tile-num" id="stat-total">—</div></div>
+            <div class="tile"><b>&gt; total unique</b><div class="tile-num" id="stat-unique">—</div></div>
+            <div class="tile"><b>&gt; total value (raw)</b><div class="tile-num" id="stat-raw">£—</div></div>
+            <div class="tile"><b>&gt; total value (psa 10)</b><div class="tile-num" id="stat-psa10">£—</div></div>
+          </div>
+
+          <!-- controls -->
+          <div class="collect-controls kv">
+            <input class="collect-search" placeholder="search name or ID…" />
+            <select class="collect-set">
+              <option value="">All sets</option>
+            </select>
+            <select class="collect-lang">
+              <option>Both languages</option>
+              <option>English</option>
+              <option>Japanese</option>
+            </select>
+          </div>
+
+          <!-- scroll area -->
+          <div class="collection-wrap">
+            <div class="collect-grid" id="collect-grid">
+              <div class="kv" style="opacity:.7">Loading collection…</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- BINDERS -->
+        <section id="binders" role="tabpanel">
+          <p><span class="cwd">C:\Users\zojdrek&gt;</span> binders open</p>
+          <div class="kv" id="binders-status" style="opacity:.85">
+            <b>&gt; binders</b><br/>
+            Loading binder config from collections/config.csv…
+          </div>
+          <div class="binders-controls kv">
+            <label for="binders-select" style="display:none">Choose set</label>
+            <select id="binders-select" class="binders-select" aria-label="Choose set"></select>
+            <div class="binders-pages" id="binders-pages" role="radiogroup" aria-label="Cards per page">
+              <input type="radio" id="pages-9" name="binders-pages" value="9" checked>
+              <label for="pages-9">9 / page</label>
+              <input type="radio" id="pages-12" name="binders-pages" value="12">
+              <label for="pages-12">12 / page</label>
+            </div>
+            <div class="binders-pager">
+              <button id="binders-prev" class="btn" type="button" aria-label="Previous page">◀ Prev</button>
+              <span id="binders-page-indicator" class="binders-page-indicator" aria-live="polite">Page 1/1</span>
+              <button id="binders-next" class="btn" type="button" aria-label="Next page">Next ▶</button>
+            </div>
+          </div>
+          <div id="binders-content" class="binders-list"></div>
+        </section>
+      </div>
+    </main>
+
+    <footer>© <span id="year"></span> zojdrek.dev — CMD-style portfolio</footer>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
