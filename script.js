@@ -93,31 +93,64 @@ function setupHamburger(){
 window.addEventListener('DOMContentLoaded', setupHamburger);
 
 /* ---- CV: Generate downloadable PDF from page content ---- */
-function downloadCvPdf(){
+function loadScript(src){
+  return new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = src; s.async = true; s.onload = resolve; s.onerror = reject; document.head.appendChild(s); });
+}
+async function ensureHtml2PdfLoaded(){
+  if (typeof window.html2pdf !== 'undefined') return true;
+  try { await loadScript('https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js'); } catch(_) {}
+  if (typeof window.html2pdf !== 'undefined') return true;
+  try { await loadScript('vendor/html2pdf.bundle.min.js'); } catch(_) {}
+  return typeof window.html2pdf !== 'undefined';
+}
+async function downloadCvPdf(){
   try{
     const el = document.getElementById('cv');
     if (!el) { alert('CV section not found'); return; }
-    if (typeof html2pdf === 'undefined') {
-      alert('PDF generator not loaded. Please check your internet connection and try again.');
-      return;
+    const ok = await ensureHtml2PdfLoaded();
+    if (!ok){ alert('PDF generator not available. Add vendor/html2pdf.bundle.min.js or retry online.'); return; }
+    // Build an off-screen export container to avoid viewport clipping
+    const MM_TO_PX = 3.7795275591; // 96dpi
+    const a4 = { wmm:210, hmm:297 };
+    const margin = { top:10, right:10, bottom:10, left:10 };
+    const contentWidthPx = Math.floor((a4.wmm - margin.left - margin.right) * MM_TO_PX); // ~718px
+    const contentHeightPx = Math.floor((a4.hmm - margin.top - margin.bottom) * MM_TO_PX); // ~1046px
+
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.top = '0';
+    wrapper.style.left = '0';
+    wrapper.style.zIndex = '-1'; // behind everything but still rendered
+    wrapper.style.background = '#ffffff';
+    wrapper.style.padding = '0';
+    document.body.appendChild(wrapper);
+
+    const inner = document.createElement('div');
+    inner.className = 'cv-export';
+    inner.style.width = contentWidthPx + 'px';
+    inner.innerHTML = el.innerHTML; // clone content only
+    wrapper.appendChild(inner);
+
+    // If content is taller than one page, scale it down to fit
+    const h = inner.scrollHeight;
+    let scale = 1;
+    if (h > contentHeightPx) scale = contentHeightPx / h;
+    if (scale < 1){
+      inner.style.transformOrigin = 'top left';
+      inner.style.transform = `scale(${scale})`;
+      inner.style.width = (contentWidthPx/scale) + 'px';
     }
-    // Temporarily switch to export theme
-    el.classList.add('cv-export');
-    // Slight delay to allow styles to apply
-    setTimeout(() => {
-      const opt = {
-        margin:       [10, 10, 10, 10], // top, left, bottom, right (mm via jsPDF unit)
-        filename:     'Hubert_Zdrojewski_CV.pdf',
-        image:        { type: 'jpeg', quality: 0.95 },
-        html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#FFFFFF' },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
-      };
-      html2pdf().from(el).set(opt).save().then(() => {
-        el.classList.remove('cv-export');
-      }).catch(() => el.classList.remove('cv-export'));
-    }, 50);
-  }catch(e){ console.error(e); alert('Failed to generate PDF. Try printing to PDF instead.'); }
+
+    const opt = {
+      margin:[margin.top, margin.left, margin.bottom, margin.right],
+      filename:'Hubert_Zdrojewski_CV.pdf',
+      image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#FFFFFF',logging:false},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
+    };
+    await html2pdf().from(wrapper).set(opt).save();
+    document.body.removeChild(wrapper);
+  }catch(e){ console.error(e); alert('Failed to generate PDF.'); }
 }
 
 /* ---------- fake terminal input (don’t steal focus) ---------- */

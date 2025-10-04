@@ -109,12 +109,18 @@
   .cv-main{ display:flex; flex-direction:column; gap:14px; }
 
   /* CV export (light theme for PDF) */
-  #cv.cv-export .cv-h3{ color:#000; }
-  #cv.cv-export .kv{ background:#fff; border:1px solid #ddd; }
-  #cv.cv-export .cv-card{ padding:12px; box-shadow:none; }
-  #cv.cv-export .tags .tag{ border-color:#bbb; color:#333; background:#fff; }
-  #cv.cv-export .btn{ display:none; }
-  #cv.cv-export{ color:#000; }
+  .cv-export{ color:#111; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height:1.35; background:#fff; }
+  .cv-export .cv-h3{ color:#000; font-size:14px; margin-bottom:8px; }
+  .cv-export .kv{ background:#fff; border:1px solid #d9d9d9; }
+  .cv-export .cv-card{ padding:10px; box-shadow:none; }
+  .cv-export .cv-entry{ margin:8px 0 4px; }
+  .cv-export .cv-p, .cv-export .cv-list{ color:#111; font-size:12px; }
+  .cv-export .cv-role{ color:#000; font-weight:600; font-size:12.5px; margin-bottom:4px; }
+  .cv-export .cv-meta{ color:#333; font-weight:500; }
+  .cv-export .tags .tag{ border-color:#bbb; color:#333; background:#fff; font-size:11px; }
+  .cv-export .cv-grid{ gap:8px; grid-template-columns: 1fr 1.6fr; }
+  .cv-export .btn{ display:none; }
+  .cv-export a{ color:#000; text-decoration:none; }
   
   /* ===== Collection ===== */
   .tiles{
