@@ -361,9 +361,16 @@
 .binders-pages input:checked + label{ color:var(--accent); background:#0e0e0e; }
 
 .binders-pager{ display:inline-flex; gap:8px; align-items:center; margin-left:auto; }
-  .binders-page-indicator{ color:#bcbcbc; font-size:13px; }
-  .binders-pager .btn[disabled]{ opacity:.5; cursor:not-allowed; }
-  .owned-toggle{ color:#cfcfcf; font-size:14px; display:flex; align-items:center; gap:6px; }
+.binders-page-indicator{ color:#bcbcbc; font-size:13px; }
+.binders-pager .btn[disabled]{ opacity:.5; cursor:not-allowed; }
+.owned-toggle{ color:#cfcfcf; font-size:14px; display:flex; align-items:center; gap:6px; }
+
+/* Language slider for Binders */
+.binders-lang{ display:inline-flex; border:1px solid #1f1f1f; border-radius:8px; overflow:hidden; box-shadow: inset 0 0 0 1px #000; }
+.binders-lang input{ display:none; }
+.binders-lang label{ padding:8px 12px; cursor:pointer; color:#cfcfcf; background:#0b0b0b; user-select:none; }
+.binders-lang label + input + label{ border-left:1px solid #1f1f1f; }
+.binders-lang input:checked + label{ color:var(--accent); background:#0e0e0e; }
 .binders-list{ display:flex; flex-direction:column; gap:16px; }
 .binder-set{ border:1px dashed #1f1f1f; border-radius:10px; background:#0c0c0c; padding:12px; }
 .binder-set h3{ margin:0 0 10px; color:var(--accent); font-size:16px; display:flex; align-items:center; gap:10px; }

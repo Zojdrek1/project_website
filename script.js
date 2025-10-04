@@ -541,9 +541,17 @@ function renderBinders(sets){
   });
 }
 
+function detectSetLanguage(row){
+  const link = String(row.link || row.file || '').toLowerCase();
+  if (link.includes('japanese')) return 'japanese';
+  return 'english';
+}
+
 function buildBindersSelect(){
   const sel = Binders.els.select(); if (!sel) return;
-  sel.innerHTML = Binders.config.map((r, i) => {
+  const inLang = (r) => detectSetLanguage(r) === (Binders.lang || 'english');
+  const items = Binders.config.filter(inLang);
+  sel.innerHTML = items.map((r) => {
     const name = (r.name || 'Untitled').replace(/"/g,'&quot;');
     const file = (r.file || '').replace(/"/g,'&quot;');
     return `<option value="${file}">${name}</option>`;
@@ -553,30 +561,38 @@ function buildBindersSelect(){
 async function showSelectedBinder(file){
   const row = Binders.config.find(r => r.file === file) || Binders.config[0];
   if (!row) return;
-  setBindersStatus(`Loading set: ${row.name}…`);
-  await ensureOwnedFromCards();
-  let data = Binders.cache.get(row.file);
-  if (!data){
-    const cards = await loadSetCSV(row.file);
-    data = { name: row.name, link: row.link, cards: sortSetCards(cards) };
-    Binders.cache.set(row.file, data);
+  // Ensure selection matches current language filter
+  let chosen = row;
+  if (detectSetLanguage(row) !== (Binders.lang || 'english')){
+    const firstInLang = Binders.config.find(r => detectSetLanguage(r) === (Binders.lang || 'english'));
+    if (firstInLang) chosen = firstInLang;
   }
-  Binders.currentFile = row.file;
+  setBindersStatus(`Loading set: ${chosen.name}…`);
+  await ensureOwnedFromCards();
+  let data = Binders.cache.get(chosen.file);
+  if (!data){
+    const cards = await loadSetCSV(chosen.file);
+    data = { name: chosen.name, link: chosen.link, cards: sortSetCards(cards) };
+    Binders.cache.set(chosen.file, data);
+  }
+  Binders.currentFile = chosen.file;
   renderBinders([data]);
   const stats = computeSetStats(data.cards);
   const ct = computeCollectionTotals(data.cards);
   setBindersStatus(`<b>${data.name}</b><br/>Owned: ${stats.owned} / ${stats.total} • ${stats.pct}%<br/>In set: ${ct.qtySum} cards`);
   // persist + deep link
   try{
-    localStorage.setItem('binders.file', row.file);
+    localStorage.setItem('binders.file', chosen.file);
     localStorage.setItem('binders.pageSize', String(Binders.pageSize));
     localStorage.setItem('binders.page', String(Binders.currentPage));
     localStorage.setItem('binders.ownedOnly', String(Binders.ownedOnly));
+    localStorage.setItem('binders.lang', String(Binders.lang || 'english'));
   }catch(_){ }
   const params = new URLSearchParams();
-  params.set('file', row.file);
+  params.set('file', chosen.file);
   params.set('ps', String(Binders.pageSize));
   params.set('pg', String(Binders.currentPage+1));
+  params.set('lang', String(Binders.lang || 'english'));
   if (Binders.ownedOnly) params.set('owned','1');
   writeHash('binders', params);
   // no animations
@@ -588,6 +604,13 @@ async function initBinders(params){
     setBindersStatus('Loading binder config from collections/config.csv…');
     Binders.config = await loadBindersConfig();
     if (!Binders.config.length){ setBindersStatus('No rows in collections/config.csv'); return; }
+    // Restore language early so dropdown is filtered correctly
+    try{
+      const storedLang = (params?.get('lang') || localStorage.getItem('binders.lang') || 'english');
+      Binders.lang = (storedLang === 'japanese') ? 'japanese' : 'english';
+      const rLang = document.getElementById(Binders.lang === 'japanese' ? 'lang-ja' : 'lang-en');
+      if (rLang) rLang.checked = true;
+    }catch(_){ Binders.lang = 'english'; }
     buildBindersSelect();
     const sel = Binders.els.select();
     if (sel && !sel._bound){
@@ -617,6 +640,20 @@ async function initBinders(params){
       });
       prev._bound = true;
     }
+    // Language toggle handlers
+    const langRadios = document.querySelectorAll('input[name="binders-lang"]');
+    langRadios.forEach(r => {
+      if (!r._bound){
+        r.addEventListener('change', () => {
+          const val = document.querySelector('input[name="binders-lang"]:checked')?.value || 'english';
+          Binders.lang = (val === 'japanese') ? 'japanese' : 'english';
+          buildBindersSelect();
+          const selEl = Binders.els.select();
+          if (selEl){ Binders.currentPage = 0; showSelectedBinder(selEl.value); }
+        });
+        r._bound = true;
+      }
+    });
     if (next && !next._bound){
       next.addEventListener('click', () => {
         if (Binders.currentPage < Binders.totalPages - 1){ Binders.currentPage++; if (Binders.currentFile) showSelectedBinder(Binders.currentFile); }
