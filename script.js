@@ -595,18 +595,26 @@ async function showSelectedBinder(file){
     if (firstInLang) chosen = firstInLang;
   }
   setBindersStatus(`Loading set: ${chosen.name}…`);
-  await ensureOwnedFromCards();
-  let data = Binders.cache.get(chosen.file);
-  if (!data){
-    const cards = await loadSetCSV(chosen.file);
-    data = { name: chosen.name, link: chosen.link, cards: sortSetCards(cards) };
-    Binders.cache.set(chosen.file, data);
+  // sync the dropdown to the effective selection
+  const selElSync = Binders.els.select(); if (selElSync) selElSync.value = chosen.file;
+  try{
+    await ensureOwnedFromCards();
+    let data = Binders.cache.get(chosen.file);
+    if (!data){
+      const cards = await loadSetCSV(chosen.file);
+      data = { name: chosen.name, link: chosen.link, cards: sortSetCards(cards) };
+      Binders.cache.set(chosen.file, data);
+    }
+    Binders.currentFile = chosen.file;
+    renderBinders([data]);
+    const stats = computeSetStats(data.cards);
+    const ct = computeCollectionTotals(data.cards);
+    setBindersStatus(`<b>${data.name}</b><br/>Owned: ${stats.owned} / ${stats.total} • ${stats.pct}%<br/>In set: ${ct.qtySum} cards`);
+  }catch(err){
+    console.error('[binders] failed to load set', chosen, err);
+    setBindersStatus(`Failed to load set: ${chosen.name}. Ensure collections/${chosen.file} exists and is accessible.`);
+    return;
   }
-  Binders.currentFile = chosen.file;
-  renderBinders([data]);
-  const stats = computeSetStats(data.cards);
-  const ct = computeCollectionTotals(data.cards);
-  setBindersStatus(`<b>${data.name}</b><br/>Owned: ${stats.owned} / ${stats.total} • ${stats.pct}%<br/>In set: ${ct.qtySum} cards`);
   // persist + deep link
   try{
     localStorage.setItem('binders.file', chosen.file);
