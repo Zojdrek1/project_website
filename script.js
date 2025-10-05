@@ -58,11 +58,14 @@ function setupDropdownBehavior(){
   const wrap = document.querySelector('nav.commands .dropdown');
   const trig = document.querySelector('nav.commands .drop-trigger');
   if (!wrap || !trig || trig._bound) return;
-  trig.addEventListener('click', (e) => {
-    e.preventDefault(); e.stopPropagation();
+  const stop = (e)=>{ e.preventDefault(); e.stopPropagation(); };
+  const menu = wrap.querySelector('.drop-menu');
+  if (menu){ ['click','touchstart','pointerdown'].forEach(t=> menu.addEventListener(t, (e)=> e.stopPropagation(), { passive:false })); }
+  ['click','touchstart','pointerdown'].forEach(t => trig.addEventListener(t, (e) => {
+    stop(e);
     const isOpen = wrap.classList.toggle('open');
     trig.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-  });
+  }, { passive:false }));
   document.addEventListener('click', (e) => {
     if (!wrap.contains(e.target)){
       wrap.classList.remove('open');
