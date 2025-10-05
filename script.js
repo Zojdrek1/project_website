@@ -216,20 +216,22 @@ function setupMobileDropdowns(){
   // Collection language + sort dropdowns
   enhanceSelectAsSheet(document.querySelector('.collect-lang'), 'Language');
   enhanceSelectAsSheet(document.querySelector('.collect-sort'), 'Sort');
-  // Collection search input — keep native on iOS to guarantee keyboard
+  // Collection search input — always keep native to guarantee keyboard
   const searchInput = document.querySelector('.collect-search');
   if (searchInput){
-    if (isIOS()) {
-      restoreNativeInput(searchInput);
-      // On iOS, scroll the input into view when focusing so it's not obscured
-      if (!searchInput._iosFocusBound){
-        searchInput.addEventListener('focus', ()=>{
-          setTimeout(()=>{ try{ searchInput.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(_){ } }, 50);
-        });
-        searchInput._iosFocusBound = true;
-      }
-    } else {
-      enhanceInputAsSheet(searchInput, 'Search');
+    restoreNativeInput(searchInput);
+    // Improve mobile typing experience
+    try{
+      searchInput.setAttribute('autocapitalize','none');
+      searchInput.setAttribute('autocorrect','off');
+      searchInput.setAttribute('spellcheck','false');
+      searchInput.setAttribute('inputmode','search');
+    }catch(_){ }
+    if (!searchInput._focusBound){
+      searchInput.addEventListener('focus', ()=>{
+        setTimeout(()=>{ try{ searchInput.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(_){ } }, 60);
+      });
+      searchInput._focusBound = true;
     }
   }
 }
