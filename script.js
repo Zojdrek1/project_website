@@ -183,9 +183,7 @@ screen.addEventListener('click', (e) => {
   screen.focus();
 });
 // Additional guard: while a select is focused, suppress screen focusing
-let suppressScreenFocus = false;
-document.addEventListener('focusin', (e) => { if (isFormField(e.target)) suppressScreenFocus = true; });
-document.addEventListener('focusout', () => { setTimeout(()=> suppressScreenFocus = false, 250); });
+// no-op guards removed; focus is not forced on touch devices
 screen.addEventListener('keydown', (e) => {
   if (isFormField(e.target)) return;
   if (e.key === 'Enter') {
@@ -199,24 +197,7 @@ screen.addEventListener('keydown', (e) => {
 });
 links.forEach(a => a.addEventListener('click', () => setTimeout(() => screen.focus(), 0)));
 const y = document.getElementById('year'); if (y) y.textContent = new Date().getFullYear();
-function attachSelectGuards(el){
-  if (!el || el._guarded) return;
-  const stop = (e)=>{ e.stopPropagation(); };
-  el.addEventListener('mousedown', stop, { passive:true });
-  el.addEventListener('click', stop, { passive:true });
-  el.addEventListener('pointerdown', stop, { passive:true });
-  el.addEventListener('touchstart', stop, { passive:true });
-  el.addEventListener('focus', ()=> { suppressScreenFocus = true; }, { passive:true });
-  el.addEventListener('blur', ()=> { setTimeout(()=> suppressScreenFocus = false, 300); }, { passive:true });
-  el._guarded = true;
-}
-document.addEventListener('DOMContentLoaded', () => {
-  try{
-    attachSelectGuards(document.querySelector('.collect-set'));
-    attachSelectGuards(document.querySelector('.collect-lang'));
-    attachSelectGuards(document.querySelector('.collect-sort'));
-  }catch(_){ }
-});
+// removed extra select guards; rely on touch focus bypass instead
 
 /* =========================
    Collection data + filters
@@ -851,7 +832,7 @@ function ensureSortControl(){
   } else {
     controls.appendChild(sel);
   }
-  attachSelectGuards(sel);
+  // no extra guards; native pickers should open reliably now
 }
 
 /* --- filters + stats + sort --- */
