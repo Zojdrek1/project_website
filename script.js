@@ -199,6 +199,24 @@ screen.addEventListener('keydown', (e) => {
 });
 links.forEach(a => a.addEventListener('click', () => setTimeout(() => screen.focus(), 0)));
 const y = document.getElementById('year'); if (y) y.textContent = new Date().getFullYear();
+function attachSelectGuards(el){
+  if (!el || el._guarded) return;
+  const stop = (e)=>{ e.stopPropagation(); };
+  el.addEventListener('mousedown', stop, { passive:true });
+  el.addEventListener('click', stop, { passive:true });
+  el.addEventListener('pointerdown', stop, { passive:true });
+  el.addEventListener('touchstart', stop, { passive:true });
+  el.addEventListener('focus', ()=> { suppressScreenFocus = true; }, { passive:true });
+  el.addEventListener('blur', ()=> { setTimeout(()=> suppressScreenFocus = false, 300); }, { passive:true });
+  el._guarded = true;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  try{
+    attachSelectGuards(document.querySelector('.collect-set'));
+    attachSelectGuards(document.querySelector('.collect-lang'));
+    attachSelectGuards(document.querySelector('.collect-sort'));
+  }catch(_){ }
+});
 
 /* =========================
    Collection data + filters
@@ -833,6 +851,7 @@ function ensureSortControl(){
   } else {
     controls.appendChild(sel);
   }
+  attachSelectGuards(sel);
 }
 
 /* --- filters + stats + sort --- */
