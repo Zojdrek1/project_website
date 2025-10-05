@@ -253,7 +253,10 @@ function enhanceInputAsSheet(input, title){
   };
   syncLabel();
   input.parentNode.insertBefore(btn, input.nextSibling);
-  btn.addEventListener('click', ()=> openSheetForInput(input, title, syncLabel));
+  // Use touchstart for iOS to guarantee keyboard shows (click can be delayed)
+  const open = (e)=>{ if (e) { try{ e.preventDefault(); }catch(_){} } openSheetForInput(input, title, syncLabel); };
+  btn.addEventListener('touchstart', open, { passive:false });
+  btn.addEventListener('click', open);
   input._mobileEnhanced = true;
 }
 function openSheetForInput(input, title, syncLabel){
@@ -262,13 +265,14 @@ function openSheetForInput(input, title, syncLabel){
   const hdr = document.createElement('div'); hdr.className = 'sheet-header'; hdr.textContent = title || 'Search'; panel.appendChild(hdr);
   const body = document.createElement('div'); body.className = 'sheet-body'; panel.appendChild(body);
   const field = document.createElement('input');
-  field.type = 'text';
+  field.type = 'search';
   field.className = 'sheet-input';
   field.value = String(input.value||'');
   field.placeholder = 'Type to search…';
   field.autocapitalize = 'none';
   field.autocorrect = 'off';
   field.spellcheck = false;
+  field.inputMode = 'search';
   body.appendChild(field);
   const actions = document.createElement('div'); actions.className = 'sheet-actions'; body.appendChild(actions);
   const applyBtn = document.createElement('button'); applyBtn.className = 'btn'; applyBtn.type = 'button'; applyBtn.textContent = 'Apply'; actions.appendChild(applyBtn);
@@ -285,6 +289,8 @@ function openSheetForInput(input, title, syncLabel){
   setTimeout(focusField, 0);
   setTimeout(focusField, 150);
   try{ field.click(); }catch(_){ }
+  // Final attempt after a frame
+  requestAnimationFrame(focusField);
 }
 document.addEventListener('DOMContentLoaded', setupMobileDropdowns);
 // removed extra select guards; rely on touch focus bypass instead
