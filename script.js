@@ -261,7 +261,14 @@ function openSheetForInput(input, title, syncLabel){
   const panel = document.createElement('div'); panel.className = 'sheet-panel'; ov.appendChild(panel);
   const hdr = document.createElement('div'); hdr.className = 'sheet-header'; hdr.textContent = title || 'Search'; panel.appendChild(hdr);
   const body = document.createElement('div'); body.className = 'sheet-body'; panel.appendChild(body);
-  const field = document.createElement('input'); field.type = 'text'; field.className = 'sheet-input'; field.value = String(input.value||''); field.placeholder = 'Type to search…';
+  const field = document.createElement('input');
+  field.type = 'text';
+  field.className = 'sheet-input';
+  field.value = String(input.value||'');
+  field.placeholder = 'Type to search…';
+  field.autocapitalize = 'none';
+  field.autocorrect = 'off';
+  field.spellcheck = false;
   body.appendChild(field);
   const actions = document.createElement('div'); actions.className = 'sheet-actions'; body.appendChild(actions);
   const applyBtn = document.createElement('button'); applyBtn.className = 'btn'; applyBtn.type = 'button'; applyBtn.textContent = 'Apply'; actions.appendChild(applyBtn);
@@ -272,7 +279,12 @@ function openSheetForInput(input, title, syncLabel){
   cancelBtn.addEventListener('click', ()=> document.body.removeChild(ov));
   ov.addEventListener('click', (e)=>{ if (e.target === ov) document.body.removeChild(ov); });
   document.body.appendChild(ov);
-  setTimeout(()=> field.focus(), 0);
+  const focusField = () => { try{ field.focus({ preventScroll: true }); const L = field.value.length; field.setSelectionRange(L, L); }catch(_){} };
+  // Try a few times to appease iOS focus quirks
+  focusField();
+  setTimeout(focusField, 0);
+  setTimeout(focusField, 150);
+  try{ field.click(); }catch(_){ }
 }
 document.addEventListener('DOMContentLoaded', setupMobileDropdowns);
 // removed extra select guards; rely on touch focus bypass instead
