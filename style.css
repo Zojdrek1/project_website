@@ -470,11 +470,12 @@
     background:#0b0b0b; color:#d0d0d0; border:1px solid #1f1f1f; border-radius:8px;
   }
   .sheet-overlay{ position: fixed; inset:0; background: rgba(0,0,0,.45); z-index: 999; display:flex; align-items:flex-end; }
-  .sheet-panel{ width:100%; max-height:65vh; background:#0f0f0f; border-top-left-radius:14px; border-top-right-radius:14px; border:1px solid #1a1a1a; box-shadow: var(--shadow); overflow:auto; }
+  .sheet-panel{ width:100%; max-height:70vh; background:#0f0f0f; border-top-left-radius:14px; border-top-right-radius:14px; border:1px solid #1a1a1a; box-shadow: var(--shadow); overflow:auto; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
   .sheet-header{ padding:12px; border-bottom:1px solid #1a1a1a; color:#cfcfcf; font-weight:600; }
   .sheet-list{ list-style:none; margin:0; padding:6px; }
   .sheet-item{ padding:10px 12px; color:#e0e0e0; border:1px solid #1a1a1a; border-radius:8px; background:#0b0b0b; margin:6px; }
   .sheet-item.active{ border-color:#2a684a; color:var(--accent); }
+  .sheet-overlay.kb-open .sheet-panel{ max-height:90vh; }
   /* Input sheet */
   .input-mobile-hidden{ display:none !important; }
   .sheet-body{ padding:12px; display:flex; flex-direction:column; gap:10px; }

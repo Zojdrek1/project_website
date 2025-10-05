@@ -202,6 +202,11 @@ const y = document.getElementById('year'); if (y) y.textContent = new Date().get
 function isMobileView(){
   return (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0) && window.matchMedia('(max-width: 600px)').matches;
 }
+function isIOS(){
+  const ua = navigator.userAgent || navigator.vendor || window.opera || '';
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints||0) > 1);
+  return !!iOS;
+}
 function setupMobileDropdowns(){
   if (!isMobileView()) return;
   // Binders set dropdown
@@ -211,8 +216,22 @@ function setupMobileDropdowns(){
   // Collection language + sort dropdowns
   enhanceSelectAsSheet(document.querySelector('.collect-lang'), 'Language');
   enhanceSelectAsSheet(document.querySelector('.collect-sort'), 'Sort');
-  // Collection search input
-  enhanceInputAsSheet(document.querySelector('.collect-search'), 'Search');
+  // Collection search input — keep native on iOS to guarantee keyboard
+  const searchInput = document.querySelector('.collect-search');
+  if (searchInput){
+    if (isIOS()) {
+      restoreNativeInput(searchInput);
+      // On iOS, scroll the input into view when focusing so it's not obscured
+      if (!searchInput._iosFocusBound){
+        searchInput.addEventListener('focus', ()=>{
+          setTimeout(()=>{ try{ searchInput.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(_){ } }, 50);
+        });
+        searchInput._iosFocusBound = true;
+      }
+    } else {
+      enhanceInputAsSheet(searchInput, 'Search');
+    }
+  }
 }
 function enhanceSelectAsSheet(sel, title){
   if (!sel || sel._mobileEnhanced) return;
@@ -259,6 +278,16 @@ function enhanceInputAsSheet(input, title){
   btn.addEventListener('click', open);
   input._mobileEnhanced = true;
 }
+function restoreNativeInput(input){
+  if (!input) return;
+  // Remove previously-added button if present
+  const next = input.nextSibling;
+  if (next && next.classList && next.classList.contains('mobile-dd-btn')){
+    try{ next.remove(); }catch(_){ if (next.parentNode) next.parentNode.removeChild(next); }
+  }
+  input.classList.remove('input-mobile-hidden');
+  input._mobileEnhanced = false;
+}
 function openSheetForInput(input, title, syncLabel){
   const ov = document.createElement('div'); ov.className = 'sheet-overlay';
   const panel = document.createElement('div'); panel.className = 'sheet-panel'; ov.appendChild(panel);
@@ -291,6 +320,10 @@ function openSheetForInput(input, title, syncLabel){
   try{ field.click(); }catch(_){ }
   // Final attempt after a frame
   requestAnimationFrame(focusField);
+  // Ensure input visible above keyboard by scrolling into view
+  const bringIntoView = () => { try{ field.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(_){} };
+  field.addEventListener('focus', ()=>{ ov.classList.add('kb-open'); setTimeout(bringIntoView, 50); });
+  field.addEventListener('blur', ()=>{ ov.classList.remove('kb-open'); });
 }
 document.addEventListener('DOMContentLoaded', setupMobileDropdowns);
 // removed extra select guards; rely on touch focus bypass instead
