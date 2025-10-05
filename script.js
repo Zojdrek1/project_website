@@ -165,6 +165,7 @@ async function downloadCvPdf(){
 /* ---------- fake terminal input (don’t steal focus) ---------- */
 const screen = document.getElementById('screen');
 let buffer = '';
+const isTouchDevice = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0 || (navigator.msMaxTouchPoints||0) > 0);
 function isFormField(el){
   if (!el) return false;
   // Direct interactive elements
@@ -175,7 +176,16 @@ function isFormField(el){
   // Content editable
   return !!el.isContentEditable;
 }
-screen.addEventListener('click', (e) => { if (isFormField(e.target)) return; screen.focus(); });
+// On touch devices (iOS Safari), do NOT force focus to avoid closing native pickers
+screen.addEventListener('click', (e) => {
+  if (isTouchDevice) return;
+  if (isFormField(e.target)) return;
+  screen.focus();
+});
+// Additional guard: while a select is focused, suppress screen focusing
+let suppressScreenFocus = false;
+document.addEventListener('focusin', (e) => { if (isFormField(e.target)) suppressScreenFocus = true; });
+document.addEventListener('focusout', () => { setTimeout(()=> suppressScreenFocus = false, 250); });
 screen.addEventListener('keydown', (e) => {
   if (isFormField(e.target)) return;
   if (e.key === 'Enter') {
