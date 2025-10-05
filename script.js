@@ -211,6 +211,8 @@ function setupMobileDropdowns(){
   // Collection language + sort dropdowns
   enhanceSelectAsSheet(document.querySelector('.collect-lang'), 'Language');
   enhanceSelectAsSheet(document.querySelector('.collect-sort'), 'Sort');
+  // Collection search input
+  enhanceInputAsSheet(document.querySelector('.collect-search'), 'Search');
 }
 function enhanceSelectAsSheet(sel, title){
   if (!sel || sel._mobileEnhanced) return;
@@ -239,6 +241,38 @@ function openSheetForSelect(sel, title, syncLabel){
   }
   ov.addEventListener('click', (e)=>{ if (e.target === ov) document.body.removeChild(ov); });
   document.body.appendChild(ov);
+}
+function enhanceInputAsSheet(input, title){
+  if (!input || input._mobileEnhanced) return;
+  input.classList.add('input-mobile-hidden');
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'mobile-dd-btn';
+  const syncLabel = ()=>{
+    const v = String(input.value||'').trim();
+    btn.textContent = v ? `Search: ${v}` : (title || 'Search…');
+  };
+  syncLabel();
+  input.parentNode.insertBefore(btn, input.nextSibling);
+  btn.addEventListener('click', ()=> openSheetForInput(input, title, syncLabel));
+  input._mobileEnhanced = true;
+}
+function openSheetForInput(input, title, syncLabel){
+  const ov = document.createElement('div'); ov.className = 'sheet-overlay';
+  const panel = document.createElement('div'); panel.className = 'sheet-panel'; ov.appendChild(panel);
+  const hdr = document.createElement('div'); hdr.className = 'sheet-header'; hdr.textContent = title || 'Search'; panel.appendChild(hdr);
+  const body = document.createElement('div'); body.className = 'sheet-body'; panel.appendChild(body);
+  const field = document.createElement('input'); field.type = 'text'; field.className = 'sheet-input'; field.value = String(input.value||''); field.placeholder = 'Type to search…';
+  body.appendChild(field);
+  const actions = document.createElement('div'); actions.className = 'sheet-actions'; body.appendChild(actions);
+  const applyBtn = document.createElement('button'); applyBtn.className = 'btn'; applyBtn.type = 'button'; applyBtn.textContent = 'Apply'; actions.appendChild(applyBtn);
+  const clearBtn = document.createElement('button'); clearBtn.className = 'btn'; clearBtn.type = 'button'; clearBtn.textContent = 'Clear'; actions.appendChild(clearBtn);
+  const cancelBtn = document.createElement('button'); cancelBtn.className = 'btn'; cancelBtn.type = 'button'; cancelBtn.textContent = 'Cancel'; actions.appendChild(cancelBtn);
+  applyBtn.addEventListener('click', ()=>{ input.value = field.value; input.dispatchEvent(new Event('input')); syncLabel && syncLabel(); document.body.removeChild(ov); });
+  clearBtn.addEventListener('click', ()=>{ input.value = ''; input.dispatchEvent(new Event('input')); syncLabel && syncLabel(); document.body.removeChild(ov); });
+  cancelBtn.addEventListener('click', ()=> document.body.removeChild(ov));
+  ov.addEventListener('click', (e)=>{ if (e.target === ov) document.body.removeChild(ov); });
+  document.body.appendChild(ov);
+  setTimeout(()=> field.focus(), 0);
 }
 document.addEventListener('DOMContentLoaded', setupMobileDropdowns);
 // removed extra select guards; rely on touch focus bypass instead
