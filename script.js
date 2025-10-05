@@ -208,6 +208,9 @@ function setupMobileDropdowns(){
   enhanceSelectAsSheet(document.getElementById('binders-select'), 'Choose set');
   // Collection set dropdown
   enhanceSelectAsSheet(document.querySelector('.collect-set'), 'Filter by set');
+  // Collection language + sort dropdowns
+  enhanceSelectAsSheet(document.querySelector('.collect-lang'), 'Language');
+  enhanceSelectAsSheet(document.querySelector('.collect-sort'), 'Sort');
 }
 function enhanceSelectAsSheet(sel, title){
   if (!sel || sel._mobileEnhanced) return;
