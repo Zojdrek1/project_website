@@ -875,7 +875,7 @@ function ensureSortControl(){
   } else {
     controls.appendChild(sel);
   }
-  // no extra guards; native pickers should open reliably now
+  try{ setupMobileDropdowns(); }catch(_){ }
 }
 
 /* --- filters + stats + sort --- */
