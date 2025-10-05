@@ -166,10 +166,14 @@ async function downloadCvPdf(){
 const screen = document.getElementById('screen');
 let buffer = '';
 function isFormField(el){
-  return !!(el && (
-    el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' ||
-    el.closest('input,select,textarea,button,.btn,.collect-open') || el.isContentEditable
-  ));
+  if (!el) return false;
+  // Direct interactive elements
+  if (el.matches && el.matches('input,select,textarea,button,label,a,.btn')) return true;
+  // Within interactive/control regions
+  const hit = el.closest && el.closest('input,select,textarea,button,label,a,.btn,.collect-open,.collect-controls,.binders-controls,.binders-pages,.binders-lang,.dropdown,.drop-menu');
+  if (hit) return true;
+  // Content editable
+  return !!el.isContentEditable;
 }
 screen.addEventListener('click', (e) => { if (isFormField(e.target)) return; screen.focus(); });
 screen.addEventListener('keydown', (e) => {
