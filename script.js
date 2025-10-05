@@ -197,6 +197,47 @@ screen.addEventListener('keydown', (e) => {
 });
 links.forEach(a => a.addEventListener('click', () => setTimeout(() => screen.focus(), 0)));
 const y = document.getElementById('year'); if (y) y.textContent = new Date().getFullYear();
+
+/* ----- Mobile custom dropdown (sheet) for selects ----- */
+function isMobileView(){
+  return (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0) && window.matchMedia('(max-width: 600px)').matches;
+}
+function setupMobileDropdowns(){
+  if (!isMobileView()) return;
+  // Binders set dropdown
+  enhanceSelectAsSheet(document.getElementById('binders-select'), 'Choose set');
+  // Collection set dropdown
+  enhanceSelectAsSheet(document.querySelector('.collect-set'), 'Filter by set');
+}
+function enhanceSelectAsSheet(sel, title){
+  if (!sel || sel._mobileEnhanced) return;
+  sel.classList.add('select-mobile-hidden');
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'mobile-dd-btn';
+  const syncLabel = ()=>{ const opt = sel.options[sel.selectedIndex]; btn.textContent = opt ? opt.text : (title||'Select'); };
+  syncLabel();
+  sel.parentNode.insertBefore(btn, sel.nextSibling);
+  btn.addEventListener('click', ()=> openSheetForSelect(sel, title, syncLabel));
+  sel._mobileEnhanced = true;
+}
+function openSheetForSelect(sel, title, syncLabel){
+  const ov = document.createElement('div'); ov.className = 'sheet-overlay';
+  const panel = document.createElement('div'); panel.className = 'sheet-panel'; ov.appendChild(panel);
+  const hdr = document.createElement('div'); hdr.className = 'sheet-header'; hdr.textContent = title || 'Choose'; panel.appendChild(hdr);
+  const ul = document.createElement('ul'); ul.className = 'sheet-list'; panel.appendChild(ul);
+  for (let i=0;i<sel.options.length;i++){
+    const o = sel.options[i];
+    const li = document.createElement('li'); li.className = 'sheet-item' + (i===sel.selectedIndex?' active':'');
+    li.textContent = o.text || o.value || '';
+    li.addEventListener('click', ()=>{
+      sel.selectedIndex = i; sel.dispatchEvent(new Event('change')); syncLabel && syncLabel(); document.body.removeChild(ov);
+    });
+    ul.appendChild(li);
+  }
+  ov.addEventListener('click', (e)=>{ if (e.target === ov) document.body.removeChild(ov); });
+  document.body.appendChild(ov);
+}
+document.addEventListener('DOMContentLoaded', setupMobileDropdowns);
 // removed extra select guards; rely on touch focus bypass instead
 
 /* =========================
@@ -580,6 +621,7 @@ function buildBindersSelect(){
     return `<option value="${file}">${name}</option>`;
   }).join('');
   autosizeBindersSelect();
+  try{ if (typeof setupMobileDropdowns === 'function') setupMobileDropdowns(); }catch(_){ }
 }
 
 function autosizeBindersSelect(){
@@ -807,6 +849,7 @@ function buildSetDropdown(){
 
   // keep selection if still valid, else reset to all
   if (!sets.includes(current)) sel.value = '';
+  try{ if (typeof setupMobileDropdowns === 'function') setupMobileDropdowns(); }catch(_){ }
 }
 
 /* --- Sort control injection (if missing) --- */

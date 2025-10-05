@@ -461,6 +461,22 @@
 .binder-name{ font-size:14px; color:#e0e0e0; line-height:1.2; }
 .binder-sub{ font-size:12px; color:#b0b0b0; }
 
+/* ===== Mobile custom dropdown sheet ===== */
+@media (max-width: 600px){
+  .select-mobile-hidden{ display:none !important; }
+  .mobile-dd-btn{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:40px; line-height:40px; padding:0 12px; text-align:left;
+    background:#0b0b0b; color:#d0d0d0; border:1px solid #1f1f1f; border-radius:8px;
+  }
+  .sheet-overlay{ position: fixed; inset:0; background: rgba(0,0,0,.45); z-index: 999; display:flex; align-items:flex-end; }
+  .sheet-panel{ width:100%; max-height:65vh; background:#0f0f0f; border-top-left-radius:14px; border-top-right-radius:14px; border:1px solid #1a1a1a; box-shadow: var(--shadow); overflow:auto; }
+  .sheet-header{ padding:12px; border-bottom:1px solid #1a1a1a; color:#cfcfcf; font-weight:600; }
+  .sheet-list{ list-style:none; margin:0; padding:6px; }
+  .sheet-item{ padding:10px 12px; color:#e0e0e0; border:1px solid #1a1a1a; border-radius:8px; background:#0b0b0b; margin:6px; }
+  .sheet-item.active{ border-color:#2a684a; color:var(--accent); }
+}
+
 /* Keep custom arrow only for selects */
 .collect-controls select {
   padding-right: 36px;
