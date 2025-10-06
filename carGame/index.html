@@ -8,20 +8,34 @@
   </head>
   <body>
     <div class="topbar">
-      <div class="brand">ICS — Illegal Car Sales</div>
-      <div class="row">
-        <div id="level" class="level">Lv 1 — 0/0 XP</div>
-        <div class="tag info" id="slotsTag">0/0 Slots</div>
-        <div class="heat" id="heat">
-          <div class="fill" id="heatFill"></div>
-          <span id="heatLabel">Heat 0%</span>
+      <div class="topbar-options"><button id="optionsCog" class="cog-btn" aria-label="Options">⚙️</button></div>
+      <div class="topbar-box">
+        <div class="topbar-stats">
+          <div class="stat-left">
+            <div class="heat" id="heat">
+              <div class="fill" id="heatFill"></div>
+              <span id="heatLabel">Heat 0%</span>
+            </div>
+          </div>
+          <div class="stat-center">
+            <div class="money money-big" id="money">$0</div>
+          </div>
+          <div class="stat-right">
+            <div class="tag info" id="slotsTag">0/0 Slots</div>
+          </div>
+          <div class="stat-xp">
+            <div class="xpbar" id="xpBar">
+              <div class="xpfill" id="xpFill"></div>
+              <span id="xpLabel">Lv 1 — 0/0 XP</span>
+            </div>
+          </div>
         </div>
-        <div class="money" id="money">$0</div>
       </div>
     </div>
 
     <div class="topnav" id="nav"></div>
     <main class="content">
+      <div id="navHub"></div>
       <div id="view"></div>
     </main>
 

@@ -1,10 +1,12 @@
 // --- Utility helpers ---
-const fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const rand = (min, max) => Math.random() * (max - min) + min;
 const randi = (min, max) => Math.floor(rand(min, max));
 const sample = (arr) => arr[randi(0, arr.length)];
 const chance = (p) => Math.random() < p;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const CURRENCY_RATES = { USD: 1, GBP: 0.79, EUR: 0.93, JPY: 155, PLN: 4.0 };
+const getRate = () => CURRENCY_RATES[(state && state.currency) || 'USD'] || 1;
 
 // --- Game Data ---
 const PARTS = [
@@ -49,6 +51,7 @@ const defaultState = () => ({
   money: 20000,
   level: 1,
   xp: 0,
+  currency: 'USD',
   heat: 0,
   illegalMarket: [],
   garage: [],
@@ -71,6 +74,7 @@ function migrateState() {
     if (typeof state.level !== 'number' || !isFinite(state.level)) state.level = 1;
     if (typeof state.xp !== 'number' || !isFinite(state.xp)) state.xp = 0;
     if (typeof state.garagesPurchased !== 'number' || !isFinite(state.garagesPurchased)) state.garagesPurchased = 0;
+    if (typeof state.currency !== 'string') state.currency = 'USD';
     if (typeof state.heat !== 'number' || !isFinite(state.heat)) state.heat = 0;
     if (!state.modelTrends) state.modelTrends = {};
     if (!state.ui || typeof state.ui !== 'object') state.ui = { openCars: {}, showDev: false };
@@ -83,6 +87,7 @@ function migrateState() {
     if (!state.partsPrices.illegal) state.partsPrices.illegal = {};
     const normalizeCar = (car) => {
       if (!car || !car.parts) return;
+      if (typeof car.failed !== 'boolean') car.failed = false;
       for (const p of PARTS) {
         const v = car.parts[p.key];
         if (typeof v === 'boolean') car.parts[p.key] = v ? 100 : 0;
@@ -145,12 +150,17 @@ function xpForLevel(level) {
 }
 function xpNeeded() { return xpForLevel(state.level); }
 function updateLevelUI() {
-  const el = document.getElementById('level');
-  if (!el) return;
   const lvl = (typeof state.level === 'number' && isFinite(state.level)) ? state.level : 1;
   const xp = (typeof state.xp === 'number' && isFinite(state.xp)) ? state.xp : 0;
   const need = xpForLevel(lvl);
-  el.textContent = `Lv ${lvl} — ${xp}/${need} XP`;
+  const el = document.getElementById('level');
+  if (el) el.textContent = `Lv ${lvl} — ${xp}/${need} XP`;
+  // Also update the XP progress bar in the top bar if present
+  const bar = document.getElementById('xpBar');
+  const fill = document.getElementById('xpFill');
+  const label = document.getElementById('xpLabel');
+  if (fill) fill.style.width = Math.max(0, Math.min(100, Math.round((xp / Math.max(1, need)) * 100))) + '%';
+  if (label) label.textContent = `Lv ${lvl} — ${xp}/${need} XP`;
 }
 function addXP(amount, reason = '') {
   if (!amount) return;
@@ -184,7 +194,7 @@ function newCar(fromModel) {
   const avgCond = PARTS.reduce((a, p) => a + (parts[p.key] ?? 100), 0) / PARTS.length;
   const condFactor = 0.5 + (avgCond / 100) * 0.5; // 0.5..1.0
   const priceVar = rand(0.75, 1.25);
-  const base = fromModel.basePrice;
+  const base = Math.round(fromModel.basePrice * getRate());
   const price = Math.round(base * priceVar * condFactor);
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
@@ -207,12 +217,13 @@ function refreshIllegalMarket() {
     // Seed car listing price history from model index adjusted by condition
     const avgCond = PARTS.reduce((a, p) => a + (car.parts[p.key] ?? 100), 0) / PARTS.length;
     const condFactor = 0.5 + (avgCond / 100) * 0.5; // 0.5..1.0
-    const series = state.modelTrends[baseModel.model] || [baseModel.basePrice];
+    const series = state.modelTrends[baseModel.model] || [Math.round(baseModel.basePrice * getRate())];
     const seedLen = Math.min(30, series.length);
     const start = series.slice(series.length - seedLen);
     const hist = start.map(v => {
       const noisy = Math.round(v * condFactor * rand(0.97, 1.03));
-      return clamp(noisy, Math.round(baseModel.basePrice * 0.5), Math.round(baseModel.basePrice * 1.5));
+      const baseNow = Math.round(baseModel.basePrice * getRate());
+      return clamp(noisy, Math.round(baseNow * 0.5), Math.round(baseNow * 1.5));
     });
     car.priceHistory = hist;
     car.price = hist[hist.length - 1];
@@ -223,16 +234,18 @@ function refreshIllegalMarket() {
 function refreshPartsPrices() {
   state.partsPrices.legal = {};
   state.partsPrices.illegal = {};
+  const r = getRate();
   for (const p of PARTS) {
-    state.partsPrices.legal[p.key] = Math.round(p.basePrice * rand(0.9, 1.2));
-    state.partsPrices.illegal[p.key] = Math.round(p.basePrice * rand(0.6, 1.0));
+    state.partsPrices.legal[p.key] = Math.round(p.basePrice * r * rand(0.9, 1.2));
+    state.partsPrices.illegal[p.key] = Math.round(p.basePrice * r * rand(0.6, 1.0));
   }
 }
 
 function tickPartsPrices() {
   // Drift current prices like a stock ticker, within bounds around base price
+  const r = getRate();
   for (const p of PARTS) {
-    const base = p.basePrice;
+    const base = p.basePrice * r;
     // Legal market drifts gently
     const curL = state.partsPrices.legal[p.key] ?? Math.round(base * 1.0);
     const mulL = rand(0.97, 1.03);
@@ -358,7 +371,7 @@ function ensureModelTrends() {
     const key = m.model;
     if (!Array.isArray(state.modelTrends[key]) || !state.modelTrends[key].length) {
       // Prefill a full series via bounded random walk around base price
-      const base = m.basePrice;
+      const base = Math.round(m.basePrice * getRate());
       const series = [];
       let cur = Math.round(base * rand(0.9, 1.1));
       for (let i = 0; i < PRICE_HISTORY_MAX; i++) {
@@ -520,46 +533,129 @@ function conditionStatus(avg) {
   if (avg >= 40) return { label: 'Risky', cls: 'bad' };
   return { label: 'Critical', cls: 'bad' };
 }
-function canRace(car) { return true; }
+function canRace(car) { return !car.failed; }
+
+function simulateRaceOutcome(car) {
+  const avg = avgCondition(car);
+  const winChance = clamp((car.perf / 120) * (0.8 + (avg / 100) * 0.2), 0.4, 0.85);
+  const rewardBase = Math.round(400 + car.perf * rand(12, 28)); // retained for potential future use
+  let failedPart = null;
+  // Failure risk grows when parts are <60%
+  for (const p of PARTS) {
+    const cond = car.parts[p.key] ?? 100;
+    if (cond < 60) {
+      const risk = (60 - cond) / 100 * 0.3;
+      if (chance(risk)) { failedPart = p.key; break; }
+    }
+  }
+  const win = !failedPart && chance(winChance);
+  return { win, reward: rewardBase, failedPart };
+}
+
+function applyRaceOutcome(car, outcome, bet) {
+  if (outcome.failedPart) {
+    const key = outcome.failedPart;
+    const cond = car.parts[key] ?? 100;
+    const drop = Math.round(rand(15, 35));
+    car.parts[key] = clamp(cond - drop, 0, 100);
+    car.failed = true;
+    pushLog(`${car.model} DNF — ${PARTS.find(p=>p.key===key).name} failed during the race! Vehicle must be repaired before racing again.`);
+    if (bet && bet > 0) addMoney(-bet, 'Race bet lost (DNF)');
+    return;
+  }
+  if (outcome.win) {
+    if (bet && bet > 0) addMoney(bet, 'Race bet won');
+    addXP(Math.round(12 + car.perf / 10), `${car.model} race win`);
+    addHeat(3, 'Street race');
+  } else {
+    pushLog(`${car.model} lost the race. No payout.`);
+    if (bet && bet > 0) addMoney(-bet, 'Race bet lost');
+    addXP(4, `${car.model} race experience`);
+    addHeat(2, 'Street race');
+  }
+  const wearPart = sample(PARTS).key;
+  car.parts[wearPart] = clamp((car.parts[wearPart] ?? 100) - Math.round(rand(5, 12)), 0, 100);
+}
+
+function showRaceAnimation(car, outcome, done) {
+  const modal = document.createElement('div');
+  modal.className = 'race-modal open';
+  modal.id = 'raceModal';
+  const backdrop = document.createElement('div'); backdrop.className = 'race-backdrop'; backdrop.onclick = () => {};
+  const panel = document.createElement('div'); panel.className = 'race-panel';
+  // pick a simple opponent for the animation label
+  const opp = sample(MODELS);
+  const title = document.createElement('div'); title.className = 'race-title'; title.textContent = `Racing: ${car.model} vs ${opp.model}`;
+  const track = document.createElement('div'); track.className = 'race-track';
+  const inner = document.createElement('div'); inner.className = 'race-track-inner'; track.appendChild(inner);
+  const carEl = document.createElement('div'); carEl.className = 'race-car'; carEl.textContent = '🚗'; track.appendChild(carEl);
+  const oppEl = document.createElement('div'); oppEl.className = 'race-car opponent'; oppEl.textContent = '🚙'; track.appendChild(oppEl);
+  const flag = document.createElement('div'); flag.className = 'race-flag'; flag.textContent = '🏁'; track.appendChild(flag);
+  const result = document.createElement('div'); result.className = 'race-result'; result.textContent = '';
+  // legend + actions
+  const legend = document.createElement('div'); legend.className = 'race-legend';
+  legend.innerHTML = `<span class="tag">You (red 🚗): ${car.model}</span> <span class="tag">Rival (blue 🚙): ${opp.model}</span>`;
+  const actions = document.createElement('div'); actions.className = 'race-actions';
+  // Bet slider
+  const maxBet = Math.max(0, Math.min(state.money, 50000));
+  const minBet = Math.min(1000, maxBet);
+  const betWrap = document.createElement('div'); betWrap.className = 'options-field';
+  const betLabel = document.createElement('strong'); betLabel.textContent = 'Bet:'; betWrap.appendChild(betLabel);
+  const betVal = document.createElement('span'); betVal.textContent = fmt.format(minBet || 0); betWrap.appendChild(betVal);
+  const betInput = document.createElement('input'); betInput.type = 'range'; betInput.min = (maxBet > 0 ? String(Math.max(0, minBet)) : '0'); betInput.max = String(maxBet); betInput.step = '100'; betInput.value = (maxBet > 0 ? String(Math.max(0, minBet)) : '0');
+  betInput.oninput = () => { betVal.textContent = fmt.format(parseInt(betInput.value||'0',10)); };
+  betWrap.appendChild(betInput);
+  panel.appendChild(betWrap);
+  const startBtn = document.createElement('button'); startBtn.className = 'btn good'; startBtn.textContent = 'Start Race';
+  const cancelBtn = document.createElement('button'); cancelBtn.className = 'btn'; cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => { modal.remove(); };
+  actions.appendChild(startBtn); actions.appendChild(cancelBtn);
+  panel.appendChild(title); panel.appendChild(legend); panel.appendChild(track); panel.appendChild(actions); panel.appendChild(result);
+  modal.appendChild(backdrop); modal.appendChild(panel);
+  document.body.appendChild(modal);
+  // Configure endpoints based on outcome (player leads slightly on win)
+  if (outcome.failedPart) {
+    carEl.style.setProperty('--end', 'calc(100% - 80px)');
+    oppEl.style.setProperty('--end', 'calc(100% - 44px)');
+  } else if (outcome.win) {
+    carEl.style.setProperty('--end', 'calc(100% - 44px)');
+    oppEl.style.setProperty('--end', 'calc(100% - 64px)');
+  } else {
+    carEl.style.setProperty('--end', 'calc(100% - 64px)');
+    oppEl.style.setProperty('--end', 'calc(100% - 44px)');
+  }
+  carEl.style.setProperty('--dur', '2.2s');
+  oppEl.style.setProperty('--dur', '2.2s');
+  // Start handler to launch animation
+  startBtn.onclick = () => {
+    startBtn.disabled = true;
+    const bet = parseInt(betInput.value || '0', 10) || 0;
+    if (bet > state.money) { showToast('Not enough cash for this bet.', 'warn'); startBtn.disabled = false; return; }
+    carEl.classList.add('run');
+    oppEl.classList.add('run');
+    setTimeout(() => {
+      if (outcome.failedPart) { result.textContent = 'DNF — part failed!'; result.style.color = '#ff9e9e'; }
+      else if (outcome.win) { result.textContent = 'Victory!'; result.style.color = '#c9f7cf'; }
+      else { result.textContent = 'Defeat'; result.style.color = '#cfe8ff'; }
+    }, 1400);
+    setTimeout(() => {
+      modal.classList.remove('open');
+      modal.remove();
+      done && done(bet);
+    }, 2200);
+  };
+}
 
 function raceCar(garageIndex) {
   const car = state.garage[garageIndex];
   if (!car) return;
-  // Result based on performance and condition; 0.4..0.8 base
-  const avg = avgCondition(car);
-  const winChance = clamp((car.perf / 120) * (0.8 + (avg / 100) * 0.2), 0.4, 0.85);
-  const rewardBase = Math.round(400 + car.perf * rand(12, 28));
-  // Failure risk grows when parts are <60%
-  let failed = false;
-  for (const p of PARTS) {
-    const cond = car.parts[p.key] ?? 100;
-    if (cond < 60) {
-      const risk = (60 - cond) / 100 * 0.3; // up to 30% per very worn part
-      if (chance(risk)) {
-        failed = true;
-        const drop = Math.round(rand(15, 35));
-        car.parts[p.key] = clamp(cond - drop, 0, 100);
-        pushLog(`${car.model} DNF — ${p.name} failed during the race!`);
-        break;
-      }
-    }
-  }
-  if (!failed) {
-    if (chance(winChance)) {
-      addMoney(rewardBase, `${car.model} won a street race`);
-      addXP(Math.round(12 + car.perf / 10), `${car.model} race win`);
-      addHeat(3, 'Street race');
-    } else {
-      pushLog(`${car.model} lost the race. No payout.`);
-      addXP(4, `${car.model} race experience`);
-      addHeat(2, 'Street race');
-    }
-    // Normal wear
-    const wearPart = sample(PARTS).key;
-    car.parts[wearPart] = clamp((car.parts[wearPart] ?? 100) - Math.round(rand(5, 12)), 0, 100);
-  }
-  render();
-  saveState();
+  if (!canRace(car)) { showToast('Vehicle must be repaired before racing.', 'warn'); return; }
+  const outcome = simulateRaceOutcome(car);
+  showRaceAnimation(car, outcome, (bet) => {
+    applyRaceOutcome(car, outcome, bet || 0);
+    render();
+    saveState();
+  });
 }
 
 function repairCar(garageIndex, partKey, source) {
@@ -594,6 +690,11 @@ function repairCar(garageIndex, partKey, source) {
       car.valuationHistory.push(car.valuation);
       if (car.valuationHistory.length > PRICE_HISTORY_MAX) car.valuationHistory.shift();
     }
+  }
+  // Clear failure state if car is healthy enough after repair
+  if (car.failed) {
+    const healthy = PARTS.every(p => (car.parts[p.key] ?? 100) >= 60);
+    if (healthy) car.failed = false;
   }
   addXP(source === 'legal' ? 4 : 6, `Serviced ${partKey}`);
   render();
@@ -1338,15 +1439,24 @@ function renderRaces() {
       el('thead', {}, [ el('tr', {}, [
         el('th', { text: 'Car' }),
         el('th', { text: 'Perf' }),
-        el('th', { text: 'Status' }),
+        el('th', { text: 'Condition' }),
         el('th', { text: '' }),
       ])]),
-      el('tbody', {}, state.garage.map((car, idx) => el('tr', {}, [
-        el('td', { text: car.model }),
-        el('td', { text: String(car.perf) }),
-        el('td', {}, [ canRace(car) ? el('span', { class: 'tag ok', text: 'Ready' }) : el('span', { class: 'tag bad', text: 'Broken' }) ]),
-        el('td', {}, [ el('button', { class: 'btn good', text: 'Race', onclick: () => raceCar(idx), disabled: !canRace(car) }) ]),
-      ])))
+      el('tbody', {}, state.garage.map((car, idx) => {
+        const avg = Math.round(avgCondition(car));
+        const st = conditionStatus(avg);
+        const condTag = car.failed ? el('span', { class: 'tag bad', text: 'Failed' }) : el('span', { class: `tag ${st.cls}`, text: `${st.label} (${avg}%)` });
+        const broken = PARTS.find(p => (car.parts[p.key] ?? 100) < 60);
+        const condCell = broken
+          ? [ condTag, el('div', { class: 'subtle', text: `Needs replacing: ${broken.name}` }) ]
+          : [ condTag ];
+        return el('tr', {}, [
+          el('td', { text: car.model }),
+          el('td', { text: String(car.perf) }),
+          el('td', {}, condCell),
+          el('td', {}, [ el('button', { class: 'btn good', text: 'Race', onclick: () => raceCar(idx), disabled: !canRace(car) }) ]),
+        ]);
+      }))
     ])
   ]);
   view.appendChild(panel);
@@ -1354,14 +1464,126 @@ function renderRaces() {
 
 function render() {
   renderNav();
+  renderNavHub();
   updateMoney();
+  // Wire top-right options cog opens modal
+  const optionsCog = document.getElementById('optionsCog');
+  if (optionsCog) optionsCog.onclick = () => showOptionsModal();
   const view = document.getElementById('view');
   if (!view) return;
   if (currentView === 'market') renderMarket();
   else if (currentView === 'garage') renderGarage();
   else if (currentView === 'parts') renderParts();
   else if (currentView === 'races') renderRaces();
+  // options now displayed as a modal, not a separate view
   ensureToasts();
+}
+
+function renderNavHub() {
+  const hub = document.getElementById('navHub');
+  if (!hub) return;
+  hub.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'nav-hub';
+  for (const item of NAV) {
+    const b = document.createElement('button');
+    b.className = item.key === currentView ? 'active' : '';
+    b.setAttribute('aria-label', item.label);
+    b.onclick = () => setView(item.key);
+    b.innerHTML = getIconSVG(item.icon) + ` <span class="label">${item.label}</span>`;
+    wrap.appendChild(b);
+  }
+  hub.appendChild(wrap);
+}
+
+function showOptionsModal() {
+  hideOptionsModal();
+  const modal = document.createElement('div');
+  modal.className = 'options-modal open';
+  modal.id = 'optionsModal';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'options-backdrop';
+  backdrop.onclick = hideOptionsModal;
+  const panel = document.createElement('div');
+  panel.className = 'options-panel options-wrap';
+  panel.appendChild(el('h3', { text: 'Options' }));
+  // Currency field
+  const field = document.createElement('div');
+  field.className = 'options-field';
+  field.appendChild(el('strong', { text: 'Currency:' }));
+  const sel = document.createElement('select');
+  const opts = [ ['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty'] ];
+  opts.forEach(([code, name]) => {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = `${code} — ${name}`; if ((state.currency||'USD') === code) o.selected = true; sel.appendChild(o);
+  });
+  sel.onchange = () => setCurrency(sel.value);
+  field.appendChild(sel);
+  panel.appendChild(field);
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const devBtn = el('button', { class: 'btn', text: (state.ui && state.ui.showDev) ? 'Hide Dev Tools' : 'Show Dev Tools' });
+  devBtn.onclick = () => { toggleDevPanel(); };
+  const newBtn = el('button', { class: 'btn warn', text: 'New Game' });
+  newBtn.onclick = () => showToast('Start a new game?', 'info', [ { label: 'Cancel', action: () => {} }, { label: 'Confirm', action: () => resetState() } ]);
+  const clearBtn = el('button', { class: 'btn danger', text: 'Clear Save' });
+  clearBtn.onclick = () => { try { localStorage.removeItem('ics_state'); showToast('Save cleared. Starting new game…', 'info'); } catch {} resetState(); };
+  actions.appendChild(devBtn); actions.appendChild(newBtn); actions.appendChild(clearBtn);
+  panel.appendChild(actions);
+  modal.appendChild(backdrop);
+  modal.appendChild(panel);
+  document.body.appendChild(modal);
+  // Close on ESC
+  window.addEventListener('keydown', optionsEscOnce, { once: true });
+}
+function hideOptionsModal() {
+  const modal = document.getElementById('optionsModal');
+  if (modal) modal.remove();
+}
+function optionsEscOnce(e) { if (e.key === 'Escape') hideOptionsModal(); }
+
+function setCurrency(code) {
+  const old = state.currency || 'USD';
+  const oldRate = CURRENCY_RATES[old] || 1;
+  const newRate = CURRENCY_RATES[code];
+  if (!newRate) { showToast('Unsupported currency code.', 'warn'); return; }
+  const factor = newRate / oldRate;
+  // Convert money-like values in place
+  state.money = Math.round(state.money * factor);
+  if (state.partsPrices && state.partsPrices.legal) {
+    for (const k of Object.keys(state.partsPrices.legal)) state.partsPrices.legal[k] = Math.round((state.partsPrices.legal[k] || 0) * factor);
+  }
+  if (state.partsPrices && state.partsPrices.illegal) {
+    for (const k of Object.keys(state.partsPrices.illegal)) state.partsPrices.illegal[k] = Math.round((state.partsPrices.illegal[k] || 0) * factor);
+  }
+  if (Array.isArray(state.illegalMarket)) {
+    for (const car of state.illegalMarket) {
+      if (typeof car.price === 'number') car.price = Math.round(car.price * factor);
+      if (Array.isArray(car.priceHistory)) car.priceHistory = car.priceHistory.map(v => Math.round(v * factor));
+      if (typeof car.basePrice === 'number') car.basePrice = Math.round(car.basePrice * factor);
+      if (typeof car.boughtPrice === 'number') car.boughtPrice = Math.round(car.boughtPrice * factor);
+    }
+  }
+  if (Array.isArray(state.garage)) {
+    for (const car of state.garage) {
+      if (typeof car.valuation === 'number') car.valuation = Math.round(car.valuation * factor);
+      if (Array.isArray(car.valuationHistory)) car.valuationHistory = car.valuationHistory.map(v => Math.round(v * factor));
+      if (typeof car.basePrice === 'number') car.basePrice = Math.round(car.basePrice * factor);
+      if (typeof car.boughtPrice === 'number') car.boughtPrice = Math.round(car.boughtPrice * factor);
+    }
+  }
+  if (state.modelTrends) {
+    for (const k of Object.keys(state.modelTrends)) {
+      if (Array.isArray(state.modelTrends[k])) state.modelTrends[k] = state.modelTrends[k].map(v => Math.round(v * factor));
+    }
+  }
+  // Switch formatter and currency
+  try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: code, maximumFractionDigits: 0 }); } catch {}
+  state.currency = code;
+  saveState();
+  showToast(`Currency set to ${code}.`, 'info');
+  render();
 }
 
 function refreshAll() {
@@ -1378,6 +1600,8 @@ migrateState();
 if (!state.illegalMarket.length) refreshIllegalMarket();
 if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
 ensureModelTrends();
+// Apply currency from save
+try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
 render();
 startPartsTicker();
 startIllegalTicker();
@@ -1432,7 +1656,7 @@ function showToast(message, type = 'info', actions = null, timeoutMs = 4200) {
 function garageCapacity() { return 1 + (state.garagesPurchased || 0); }
 function nextGarageCost() {
   const n = state.garagesPurchased || 0;
-  const raw = 15000 * Math.pow(1.5, n);
+  const raw = 15000 * Math.pow(1.5, n) * getRate();
   return Math.round(raw / 500) * 500;
 }
 function buyGarageSlot() {
