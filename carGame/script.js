@@ -10,11 +10,27 @@ const getRate = () => CURRENCY_RATES[(state && state.currency) || 'USD'] || 1;
 
 // --- Game Data ---
 const PARTS = [
-  { key: 'engine', name: 'Engine', basePrice: 1500 },
-  { key: 'transmission', name: 'Transmission', basePrice: 1200 },
-  { key: 'tires', name: 'Tires', basePrice: 400 },
-  { key: 'brakes', name: 'Brakes', basePrice: 300 },
-  { key: 'electronics', name: 'Electronics', basePrice: 600 },
+  // Engine system (split)
+  { key: 'engine_block', name: 'Engine Block', basePrice: 4000 },
+  { key: 'induction', name: 'Induction (Turbo/Intake)', basePrice: 1500 },
+  { key: 'fuel_system', name: 'Fuel System', basePrice: 800 },
+  { key: 'cooling', name: 'Cooling (Radiator/Pump)', basePrice: 600 },
+  { key: 'ignition', name: 'Ignition (Coils/Plugs)', basePrice: 300 },
+  { key: 'timing', name: 'Timing (Belt/Chain)', basePrice: 700 },
+  { key: 'alternator', name: 'Alternator', basePrice: 350 },
+  { key: 'ecu', name: 'ECU/Sensors', basePrice: 900 },
+  // Drivetrain
+  { key: 'transmission', name: 'Transmission', basePrice: 2500 },
+  { key: 'clutch', name: 'Clutch', basePrice: 700 },
+  { key: 'differential', name: 'Differential', basePrice: 1200 },
+  // Running gear
+  { key: 'suspension', name: 'Suspension', basePrice: 1000 },
+  { key: 'tires', name: 'Tires', basePrice: 800 },
+  { key: 'brakes', name: 'Brakes', basePrice: 600 },
+  // Other
+  { key: 'exhaust', name: 'Exhaust', basePrice: 900 },
+  { key: 'battery', name: 'Battery', basePrice: 200 },
+  { key: 'electronics', name: 'Interior Electronics', basePrice: 600 },
 ];
 
 const MODELS = [
@@ -535,21 +551,29 @@ function conditionStatus(avg) {
 }
 function canRace(car) { return !car.failed; }
 
-function simulateRaceOutcome(car) {
+function simulateRaceOutcome(car, opponentPerf) {
   const avg = avgCondition(car);
-  const winChance = clamp((car.perf / 120) * (0.8 + (avg / 100) * 0.2), 0.4, 0.85);
-  const rewardBase = Math.round(400 + car.perf * rand(12, 28)); // retained for potential future use
+  // Rating: performance plus small condition bonus
+  const myRating = car.perf + (avg - 60) * 0.3;
+  const oppRating = (opponentPerf ?? sample(MODELS).perf) + rand(-6, 6);
+  // Logistic win chance based on rating difference
+  const diff = myRating - oppRating;
+  const winChance = clamp(1 / (1 + Math.exp(-diff / 18)), 0.15, 0.9);
+  // Failure risk baseline even at 100%, increases with weak parts
+  let failRisk = 0.02;
   let failedPart = null;
-  // Failure risk grows when parts are <60%
   for (const p of PARTS) {
     const cond = car.parts[p.key] ?? 100;
-    if (cond < 60) {
-      const risk = (60 - cond) / 100 * 0.3;
-      if (chance(risk)) { failedPart = p.key; break; }
-    }
+    if (cond < 60) failRisk += (60 - cond) / 100 * 0.15;
+    if (!failedPart && cond < 60 && chance((60 - cond) / 100 * 0.3)) failedPart = p.key;
   }
+  if (!failedPart && chance(failRisk)) failedPart = sample(PARTS).key;
   const win = !failedPart && chance(winChance);
-  return { win, reward: rewardBase, failedPart };
+  // House edge on odds: expected value slightly negative
+  const margin = 0.12;
+  const fairMult = 1 / winChance - 1; // net profit multiplier at fair odds
+  const netProfitMult = Math.max(0, fairMult * (1 - margin));
+  return { win, failedPart, winChance, netProfitMult };
 }
 
 function applyRaceOutcome(car, outcome, bet) {
@@ -564,7 +588,10 @@ function applyRaceOutcome(car, outcome, bet) {
     return;
   }
   if (outcome.win) {
-    if (bet && bet > 0) addMoney(bet, 'Race bet won');
+    if (bet && bet > 0) {
+      const profit = Math.round(bet * outcome.netProfitMult);
+      addMoney(profit, 'Race bet won');
+    }
     addXP(Math.round(12 + car.perf / 10), `${car.model} race win`);
     addHeat(3, 'Street race');
   } else {
@@ -597,7 +624,7 @@ function showRaceAnimation(car, outcome, done) {
   legend.innerHTML = `<span class="tag">You (red 🚗): ${car.model}</span> <span class="tag">Rival (blue 🚙): ${opp.model}</span>`;
   const actions = document.createElement('div'); actions.className = 'race-actions';
   // Bet slider
-  const maxBet = Math.max(0, Math.min(state.money, 50000));
+  const maxBet = Math.max(0, Math.min(Math.floor(state.money * 0.25), 50000));
   const minBet = Math.min(1000, maxBet);
   const betWrap = document.createElement('div'); betWrap.className = 'options-field';
   const betLabel = document.createElement('strong'); betLabel.textContent = 'Bet:'; betWrap.appendChild(betLabel);
@@ -650,7 +677,8 @@ function raceCar(garageIndex) {
   const car = state.garage[garageIndex];
   if (!car) return;
   if (!canRace(car)) { showToast('Vehicle must be repaired before racing.', 'warn'); return; }
-  const outcome = simulateRaceOutcome(car);
+  // Simulate using opponent perf chosen in animation as proxy (pass later into simulate, but we already simulate here)
+  const outcome = simulateRaceOutcome(car, undefined);
   showRaceAnimation(car, outcome, (bet) => {
     applyRaceOutcome(car, outcome, bet || 0);
     render();
@@ -1301,6 +1329,9 @@ function renderCarBreakdown(car, idx) {
   const svg = document.createElementNS(svgNS, 'svg');
   svg.setAttribute('viewBox', '0 0 600 260');
   svg.setAttribute('class', 'car-silhouette');
+  const group = document.createElementNS(svgNS, 'g');
+  group.setAttribute('class', 'car-group');
+  group.setAttribute('transform', 'translate(60,18) scale(0.78)');
   const path = document.createElementNS(svgNS, 'path');
   path.setAttribute('class', 'silhouette-path');
   // car outline path by body style
@@ -1333,13 +1364,18 @@ function renderCarBreakdown(car, idx) {
     };
     box.appendChild(img);
   }
-  svg.appendChild(path);
-  // connectors to callouts
+  group.appendChild(path);
+  svg.appendChild(group);
+  // connectors to callouts (formatted: left large, top center, right large)
   const connectors = [
-    // [x1,y1,x2,y2, x3,y3] polylines to boxes
-    { points: '120,110 90,70 90,40' }, // engine upper-left box
-    { points: '500,140 540,110 540,40' }, // transmission upper-right
-    { points: '420,180 500,210 520,230' }, // running gear bottom-right
+    // Left (engine group) from front axle and hood
+    { points: '170,190 140,215 120,240' },
+    { points: '150,120 130,100 120,80' },
+    // Top center (drivetrain) from roofline
+    { points: '360,120 360,90 360,60' },
+    // Right (running gear) from rear axle and underbody
+    { points: '460,190 510,220 560,240' },
+    { points: '380,205 500,235 560,240' },
   ];
   for (const c of connectors) {
     const pl = document.createElementNS(svgNS, 'polyline');
@@ -1352,52 +1388,95 @@ function renderCarBreakdown(car, idx) {
   // Helper for badge class
   const badgeCls = (v) => v >= 70 ? 'ok' : v >= 50 ? 'info' : 'bad';
 
-  // Callouts
-  const engineCond = Math.round(car.parts.engine ?? 100);
-  const transCond = Math.round(car.parts.transmission ?? 100);
-  const tiresCond = Math.round(car.parts.tires ?? 100);
-  const brakesCond = Math.round(car.parts.brakes ?? 100);
-  const elecCond = Math.round(car.parts.electronics ?? 100);
+  // Callouts (grouped)
+  const partPct = (key) => Math.round(car.parts[key] ?? 100);
+  const addRow = (container, label, key, carId) => {
+    const cond = partPct(key);
+    const open = isPartActionsOpen(carId, key);
+    const row = el('div', { class: 'row part' }, [
+      el('span', { text: label }),
+      el('div', { class: 'spacer' }),
+      (() => { const t = el('span', { class: 'part-toggle', text: open ? '▾' : '▸' }); t.onclick = () => togglePartActions(carId, key, t); return t; })(),
+      el('span', { class: `pct-badge ${badgeCls(cond)}`, text: `${cond}%` }),
+    ]);
+    container.appendChild(row);
+    const actions = el('div', { class: 'part-actions', style: open && cond < 100 ? '' : 'display:none' }, [
+      el('button', { class: 'btn sm', ['data-gprice']: 'legal', ['data-part']: key, text: `Legal ${fmt.format(state.partsPrices.legal[key])}`, onclick: () => repairCar(idx, key, 'legal') }),
+      el('button', { class: 'btn warn sm', ['data-gprice']: 'illegal', ['data-part']: key, text: `Illegal ${fmt.format(state.partsPrices.illegal[key])}`, onclick: () => repairCar(idx, key, 'illegal') }),
+    ]);
+    // mark so toggle can find this actions block
+    actions.setAttribute('data-actions-for', `${carId}:${key}`);
+    container.appendChild(actions);
+  };
 
-  const engine = el('div', { class: 'callout', style: 'left:3%; top:4%;'}, [
-    el('div', { class: 'title' }, [ el('span', { text: 'Engine' }), el('span', { class: `pct-badge ${badgeCls(engineCond)}`, text: `${engineCond}%` }) ]),
-    engineCond >= 100 ? el('div', { class: 'subtle', text: 'OK' }) : el('div', { class: 'row-btns' }, [
-      el('button', { class: 'btn', ['data-gprice']: 'legal', ['data-part']: 'engine', text: `Legal ${fmt.format(state.partsPrices.legal.engine)}`, onclick: () => repairCar(idx, 'engine', 'legal') }),
-      el('button', { class: 'btn warn', ['data-gprice']: 'illegal', ['data-part']: 'engine', text: `Illegal ${fmt.format(state.partsPrices.illegal.engine)}`, onclick: () => repairCar(idx, 'engine', 'illegal') }),
-    ]),
-    el('div', { class: 'row' }, [ el('span', { class: 'subtle', text: 'Electronics' }), el('div', { class: 'spacer' }), el('span', { class: `pct-badge ${badgeCls(elecCond)}`, text: `${elecCond}%` }) ]),
-    elecCond >= 100 ? el('div', { class: 'subtle', text: '—' }) : el('div', { class: 'row-btns' }, [
-      el('button', { class: 'btn', ['data-gprice']: 'legal', ['data-part']: 'electronics', text: `Legal ${fmt.format(state.partsPrices.legal.electronics)}`, onclick: () => repairCar(idx, 'electronics', 'legal') }),
-      el('button', { class: 'btn warn', ['data-gprice']: 'illegal', ['data-part']: 'electronics', text: `Illegal ${fmt.format(state.partsPrices.illegal.electronics)}`, onclick: () => repairCar(idx, 'electronics', 'illegal') }),
-    ]),
-  ]);
+  const engine = el('div', { class: 'callout', style: 'left:2%; top:12%;'}, [ el('div', { class: 'title' }, [ el('span', { text: 'Engine' }) ]) ]);
+  addRow(engine, 'Engine Block', 'engine_block', car.id);
+  addRow(engine, 'Induction', 'induction', car.id);
+  addRow(engine, 'Fuel System', 'fuel_system', car.id);
+  addRow(engine, 'Cooling', 'cooling', car.id);
+  addRow(engine, 'Ignition', 'ignition', car.id);
+  addRow(engine, 'Timing', 'timing', car.id);
+  addRow(engine, 'Alternator', 'alternator', car.id);
+  addRow(engine, 'ECU', 'ecu', car.id);
   box.appendChild(engine);
 
-  const trans = el('div', { class: 'callout', style: 'right:3%; top:4%;'}, [
-    el('div', { class: 'title' }, [ el('span', { text: 'Transmission' }), el('span', { class: `pct-badge ${badgeCls(transCond)}`, text: `${transCond}%` }) ]),
-    transCond >= 100 ? el('div', { class: 'subtle', text: 'OK' }) : el('div', { class: 'row-btns' }, [
-      el('button', { class: 'btn', ['data-gprice']: 'legal', ['data-part']: 'transmission', text: `Legal ${fmt.format(state.partsPrices.legal.transmission)}`, onclick: () => repairCar(idx, 'transmission', 'legal') }),
-      el('button', { class: 'btn warn', ['data-gprice']: 'illegal', ['data-part']: 'transmission', text: `Illegal ${fmt.format(state.partsPrices.illegal.transmission)}`, onclick: () => repairCar(idx, 'transmission', 'illegal') }),
-    ]),
-  ]);
+  const trans = el('div', { class: 'callout', style: 'left:50%; top:4%; transform: translateX(-50%);'}, [ el('div', { class: 'title' }, [ el('span', { text: 'Drivetrain' }) ]) ]);
+  addRow(trans, 'Transmission', 'transmission', car.id);
+  addRow(trans, 'Clutch', 'clutch', car.id);
   box.appendChild(trans);
 
-  const running = el('div', { class: 'callout', style: 'right:3%; bottom:4%;'}, [
-    el('div', { class: 'title' }, [ el('span', { text: 'Running Gear' }) ]),
-    el('div', { class: 'row' }, [ el('span', { text: 'Tires' }), el('div', { class: 'spacer' }), el('span', { class: `pct-badge ${badgeCls(tiresCond)}`, text: `${tiresCond}%` }) ]),
-    tiresCond >= 100 ? el('div', { class: 'subtle', text: '—' }) : el('div', { class: 'row-btns' }, [
-      el('button', { class: 'btn', ['data-gprice']: 'legal', ['data-part']: 'tires', text: `Legal ${fmt.format(state.partsPrices.legal.tires)}`, onclick: () => repairCar(idx, 'tires', 'legal') }),
-      el('button', { class: 'btn warn', ['data-gprice']: 'illegal', ['data-part']: 'tires', text: `Illegal ${fmt.format(state.partsPrices.illegal.tires)}`, onclick: () => repairCar(idx, 'tires', 'illegal') }),
-    ]),
-    el('div', { class: 'row', style: 'margin-top:4px;' }, [ el('span', { text: 'Brakes' }), el('div', { class: 'spacer' }), el('span', { class: `pct-badge ${badgeCls(brakesCond)}`, text: `${brakesCond}%` }) ]),
-    brakesCond >= 100 ? el('div', { class: 'subtle', text: '—' }) : el('div', { class: 'row-btns' }, [
-      el('button', { class: 'btn', ['data-gprice']: 'legal', ['data-part']: 'brakes', text: `Legal ${fmt.format(state.partsPrices.legal.brakes)}`, onclick: () => repairCar(idx, 'brakes', 'legal') }),
-      el('button', { class: 'btn warn', ['data-gprice']: 'illegal', ['data-part']: 'brakes', text: `Illegal ${fmt.format(state.partsPrices.illegal.brakes)}`, onclick: () => repairCar(idx, 'brakes', 'illegal') }),
-    ]),
-  ]);
+  const running = el('div', { class: 'callout', style: 'right:2%; top:12%;'}, [ el('div', { class: 'title' }, [ el('span', { text: 'Running Gear' }) ]) ]);
+  addRow(running, 'Tires', 'tires', car.id);
+  addRow(running, 'Brakes', 'brakes', car.id);
+  addRow(running, 'Suspension', 'suspension', car.id);
+  addRow(running, 'Differential', 'differential', car.id);
+  addRow(running, 'Exhaust', 'exhaust', car.id);
+  addRow(running, 'Battery', 'battery', car.id);
+  addRow(running, 'Interior Elec.', 'electronics', car.id);
   box.appendChild(running);
 
+  // Ensure container height accommodates all callouts
+  requestAnimationFrame(() => layoutCarBreakdown(box));
   return box;
+}
+
+function layoutCarBreakdown(container) {
+  try {
+    const rect = container.getBoundingClientRect();
+    let maxBottom = rect.top + 320;
+    container.querySelectorAll('.callout').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > maxBottom) maxBottom = r.bottom;
+    });
+    const needed = Math.ceil(maxBottom - rect.top) + 12;
+    container.style.height = needed + 'px';
+  } catch {}
+}
+
+// Part actions toggle state
+function ensureUIMaps() {
+  if (!state.ui) state.ui = { openCars: {}, showDev: false };
+  if (!state.ui.openPartActions) state.ui.openPartActions = {};
+}
+function isPartActionsOpen(carId, key) {
+  ensureUIMaps();
+  const m = state.ui.openPartActions[carId];
+  return m ? !!m[key] : false;
+}
+function togglePartActions(carId, key, toggleEl) {
+  ensureUIMaps();
+  const m = state.ui.openPartActions[carId] || (state.ui.openPartActions[carId] = {});
+  m[key] = !m[key];
+  // Update arrow
+  if (toggleEl) toggleEl.textContent = m[key] ? '▾' : '▸';
+  // Show/hide actions block without full re-render
+  const actions = document.querySelector(`.part-actions[data-actions-for="${carId}:${key}"]`);
+  if (actions) {
+    actions.style.display = m[key] ? '' : 'none';
+    const container = actions.closest('.car-breakdown');
+    if (container) layoutCarBreakdown(container);
+  }
+  saveState();
 }
 
 function renderParts() {
@@ -1477,6 +1556,10 @@ function render() {
   else if (currentView === 'races') renderRaces();
   // options now displayed as a modal, not a separate view
   ensureToasts();
+  // relayout breakdowns on each render
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.car-breakdown').forEach(layoutCarBreakdown);
+  });
 }
 
 function renderNavHub() {

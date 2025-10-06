@@ -305,17 +305,16 @@ tbody tr:hover { background: rgba(255,255,255,0.04); }
 .car-breakdown {
   position: relative;
   width: 100%;
-  aspect-ratio: 2.4 / 1; /* scales to container */
+  min-height: 320px;
+  height: auto; /* allow JS to adjust height to fit callouts */
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(21,26,33,0.35), rgba(18,23,30,0.25));
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   overflow: hidden;
 }
-.car-breakdown svg.car-silhouette {
-  position: absolute;
-  inset: 0;
-}
+.car-breakdown svg.car-silhouette { position: absolute; inset: 0; }
+.car-breakdown svg.car-silhouette .car-group { transform-origin: 50% 50%; }
 .car-breakdown .silhouette-path {
   stroke: rgba(255,255,255,0.25);
   stroke-width: 2;
@@ -323,31 +322,45 @@ tbody tr:hover { background: rgba(255,255,255,0.04); }
 }
 .car-breakdown img.car-photo {
   position: absolute;
-  inset: 6% 8% 10% 8%;
+  inset: 12% 20% 16% 20%; /* tighten image footprint to give callouts room */
   width: auto;
   height: auto;
-  max-width: 84%;
-  max-height: 84%;
+  max-width: 60%;
+  max-height: 72%;
   object-fit: contain;
   opacity: 0.18;
   filter: grayscale(1) contrast(1.35) brightness(0.85);
 }
-.car-breakdown .connector { stroke: rgba(255,255,255,0.25); stroke-width: 2; fill: none; }
+.car-breakdown .connector { stroke: rgba(255,255,255,0.35); stroke-width: 3; fill: none; }
 .car-breakdown .callout {
   position: absolute;
-  min-width: 160px;
+  min-width: 220px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 8px;
-  box-shadow: var(--shadow-sm);
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
 }
 .car-breakdown .callout .title { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
-.car-breakdown .pct-badge { font-weight: 800; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); }
+.car-breakdown .callout .part { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 13px; }
+.car-breakdown .callout .part .spacer { flex: 1; }
+.car-breakdown .callout .part:last-child { border-bottom: none; }
+.car-breakdown .callout .part-actions {
+  display: flex; align-items: center; gap: 6px;
+  margin: 4px 0 8px 0; padding: 4px 0 0 8px;
+  border-left: 2px solid rgba(255,255,255,0.1);
+}
+.car-breakdown .callout .part-actions .label { color: var(--muted); font-size: 11px; margin-right: 4px; }
+.car-breakdown .part-toggle { cursor: pointer; color: var(--muted); font-size: 16px; padding: 0 6px; user-select: none; line-height: 1; }
+.car-breakdown .pct-badge { font-weight: 800; font-variant-numeric: tabular-nums; padding: 1px 6px; font-size: 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); }
+
+/* Compact buttons */
+.btn.sm { padding: 4px 8px; font-size: 12px; border-radius: 8px; }
 .pct-badge.ok { color: #8bdc9b; }
 .pct-badge.info { color: #a7d7ff; }
 .pct-badge.bad { color: #ff9e9e; }
-.car-breakdown .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.car-breakdown .row { margin-bottom: 4px; }
+.car-breakdown .row-btns { display: flex; gap: 8px; margin-top: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 
 /* Collapsible container for breakdown */
 .collapsible { border-top: 1px dashed var(--border); margin-top: 8px; }
