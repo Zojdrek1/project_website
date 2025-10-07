@@ -88,7 +88,7 @@ export function showToast(message, type = 'info', actions = null, timeoutMs = 42
 }
 
 // Render top navigation and options popover
-export function renderNavUI({ state, currentView, navItems, onSetView, onToggleOptions, onHideOptions, onToggleDev, onNewGame, currencyCode = 'USD', currencies = [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']], onSetCurrency = null, onGoHome = null }) {
+export function renderNavUI({ state, currentView, navItems, onSetView, onToggleOptions, onHideOptions, onToggleDev, onNewGame, currencyCode = 'USD', currencies = [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']], onSetCurrency = null, onGoHome = null, onSetSound, onSetVolume, onTestSound }) {
   const nav = document.getElementById('nav');
   if (!nav) return;
   nav.innerHTML = '';
@@ -133,6 +133,21 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   sel.onchange = () => { onSetCurrency && onSetCurrency(sel.value); };
   row.appendChild(sel);
   pop.appendChild(row);
+  // Global sound controls
+  const snd = document.createElement('div'); snd.className = 'row';
+  const label = document.createElement('label'); label.textContent = 'Sound'; label.style.marginRight = '8px'; snd.appendChild(label);
+  const toggle = document.createElement('button'); toggle.className = 'btn';
+  let enabled = !!(state.ui && state.ui.casino && state.ui.casino.sound !== false);
+  toggle.textContent = enabled ? '🔊' : '🔇';
+  toggle.onclick = () => { enabled = !enabled; toggle.textContent = enabled ? '🔊' : '🔇'; onSetSound && onSetSound(enabled); };
+  snd.appendChild(toggle);
+  const range = document.createElement('input'); range.type = 'range'; range.min = '0'; range.max = '100';
+  const v = (state.ui && state.ui.casino && typeof state.ui.casino.volume === 'number') ? state.ui.casino.volume : 0.06;
+  range.value = String(Math.round(Math.max(0, Math.min(1, v))*100)); range.style.marginLeft='8px'; range.oninput = () => { const val = Math.round(parseInt(range.value||'0',10))/100; onSetVolume && onSetVolume(val); };
+  snd.appendChild(range);
+  const test = document.createElement('button'); test.className='btn'; test.textContent='Test'; test.style.marginLeft = '6px'; test.onclick = () => { onTestSound && onTestSound(); };
+  snd.appendChild(test);
+  pop.appendChild(snd);
   // Divider
   const div1 = document.createElement('div');
   div1.className = 'divider';

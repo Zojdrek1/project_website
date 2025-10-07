@@ -5,6 +5,14 @@ import { canRace, simulateRaceOutcome } from './js/race.js';
 import { ensureModelTrends, refreshIllegalMarket, refreshPartsPrices, tickPartsPricesCore, tickIllegalMarketCore, PRICE_HISTORY_MAX, PARTS_TICK_MS, ILLEGAL_TICK_MS, ILLEGAL_LISTING_REFRESH_MS } from './js/economy.js';
 import { el, ensureToasts, showToast, getIconSVG, renderNavUI, renderCenterNavUI, drawSparkline, renderMarketView, updateMarketPricesAndTrendsUI, renderGarageFullView, renderPartsView, updatePartsPricesUI as updatePartsPricesUI_M, renderRacesView, layoutCarBreakdown, getBodyStyle, getSilhouettePath } from './js/ui.js';
 let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+function currencySymbol() {
+  try {
+    const code = (state && state.currency) || 'USD';
+    const parts = new Intl.NumberFormat(undefined, { style: 'currency', currency: code, maximumFractionDigits: 0 }).formatToParts(0);
+    const p = parts.find(x => x.type === 'currency');
+    return p ? p.value : '$';
+  } catch { return '$'; }
+}
 const rand = (min, max) => Math.random() * (max - min) + min;
 const randi = (min, max) => Math.floor(rand(min, max));
 const sample = (arr) => arr[randi(0, arr.length)];
@@ -570,6 +578,9 @@ function renderNav() {
     currencies: [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']],
     onSetCurrency: (code) => setCurrency(code),
     onGoHome: () => { try { window.location.href = '../index.html'; } catch {} },
+    onSetSound: (enabled) => { ensureCasinoUI(); state.ui.casino.sound = !!enabled; saveState(); if (enabled) { casinoEnsureAudio(); casinoApplyVolume(); } },
+    onSetVolume: (vol) => { ensureCasinoUI(); state.ui.casino.volume = Math.max(0, Math.min(1, vol)); casinoApplyVolume(); saveState(); },
+    onTestSound: () => { ensureCasinoUI(); casinoEnsureAudio(); casinoPlayTest(); },
   });
   // Render center nav back in its original place
   renderCenterNavUI({ state, currentView, navItems: NAV, onSetView: (key) => setView(key) });
@@ -619,12 +630,27 @@ function cheatLevels(n) {
   render();
 }
 
+function devAddFreeSpins(n) {
+  ensureCasinoUI();
+  if (n === 'clear') {
+    state.ui.casino.freeSpins = 0;
+    showToast('Dev: free spins cleared', 'info');
+  } else {
+    const amt = typeof n === 'number' ? n : 0;
+    state.ui.casino.freeSpins = (state.ui.casino.freeSpins || 0) + amt;
+    showToast(`Dev: +${amt} free spins`, 'good');
+  }
+  saveState();
+  renderFreeSpins();
+}
+
 function renderDevPanel() {
   let panel = document.getElementById('devPanel');
   if (!state.ui || !state.ui.showDev) {
     if (panel) panel.remove();
     return;
   }
+  ensureDevUI();
   if (!panel) {
     panel = document.createElement('div');
     panel.id = 'devPanel';
@@ -633,17 +659,51 @@ function renderDevPanel() {
   }
   panel.innerHTML = '';
   panel.appendChild(el('h4', { text: 'Dev Cheats' }));
-  panel.appendChild(el('div', { class: 'row' }, [
-    el('button', { class: 'btn', text: '+$10,000', onclick: () => cheatMoney(10000) }),
-    el('button', { class: 'btn', text: '+$100,000', onclick: () => cheatMoney(100000) }),
-  ]));
-  panel.appendChild(el('div', { class: 'row' }, [
-    el('button', { class: 'btn', text: '+1 Level', onclick: () => cheatLevels(1) }),
-    el('button', { class: 'btn', text: '+5 Levels', onclick: () => cheatLevels(5) }),
-    el('button', { class: 'btn warn', text: '+10 Heat', onclick: () => addHeat(10, 'Dev heat') }),
-    el('button', { class: 'btn', text: 'Clear Heat', onclick: () => addHeat(-100, 'Dev clear') }),
-  ]));
+
+  const addSection = (key, title, icon, rows) => {
+    const open = isDevSectionOpen(key);
+    const wrap = document.createElement('div');
+    wrap.className = 'collapsible' + (open ? ' open' : '');
+    const header = el('div', { class: 'row' }, [
+      el('button', { class: 'toggle dev-toggle' + (open ? ' active' : ''), text: `${icon}  ${title}`, onclick: () => { toggleDevSection(key); renderDevPanel(); } }),
+    ]);
+    const content = document.createElement('div');
+    content.className = 'content dev-content';
+    rows.forEach(r => content.appendChild(el('div', { class: 'row' }, r)));
+    wrap.appendChild(header);
+    wrap.appendChild(content);
+    panel.appendChild(wrap);
+  };
+
+  addSection('eco', 'Economy', '💵', [
+    [ el('button', { class: 'btn', text: '+$10,000', onclick: () => cheatMoney(10000) }),
+      el('button', { class: 'btn', text: '+$100,000', onclick: () => cheatMoney(100000) }) ],
+  ]);
+
+  addSection('prog', 'Progression', '📈', [
+    [ el('button', { class: 'btn', text: '+1 Level', onclick: () => cheatLevels(1) }),
+      el('button', { class: 'btn', text: '+5 Levels', onclick: () => cheatLevels(5) }) ],
+  ]);
+
+  addSection('heat', 'Heat', '🔥', [
+    [ el('button', { class: 'btn warn', text: '+10 Heat', onclick: () => addHeat(10, 'Dev heat') }),
+      el('button', { class: 'btn', text: 'Clear Heat', onclick: () => addHeat(-100, 'Dev clear') }) ],
+  ]);
+
+  addSection('casino', 'Casino', '🎰', [
+    [ el('button', { class: 'btn good', text: '+5 Free Spins', onclick: () => devAddFreeSpins(5) }),
+      el('button', { class: 'btn good', text: '+50 Free Spins', onclick: () => devAddFreeSpins(50) }),
+      el('button', { class: 'btn warn', text: 'Clear Free Spins', onclick: () => devAddFreeSpins('clear') }) ],
+  ]);
 }
+
+function ensureDevUI() {
+  if (!state.ui) state.ui = {};
+  if (!state.ui.dev) state.ui.dev = { sections: { eco: true, prog: true, heat: false, casino: true } };
+  if (!state.ui.dev.sections) state.ui.dev.sections = { eco: true, prog: true, heat: false, casino: true };
+}
+function isDevSectionOpen(key) { ensureDevUI(); return !!state.ui.dev.sections[key]; }
+function toggleDevSection(key) { ensureDevUI(); state.ui.dev.sections[key] = !state.ui.dev.sections[key]; saveState(); }
 
 function openImagePicker(model) {
   const input = document.createElement('input');
@@ -1201,7 +1261,7 @@ function linePayout(grid, line, betPerLine) {
 function ensureCasinoUI() {
   if (!state.ui || typeof state.ui !== 'object') state.ui = {};
   if (!state.ui.casino || typeof state.ui.casino !== 'object') {
-    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0 };
+    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0, sound: true, volume: 0.06 };
   }
   const ui = state.ui.casino;
   if (!Array.isArray(ui.grid)) ui.grid = slotsGrid();
@@ -1236,10 +1296,12 @@ function renderCasino() {
   // Center: machine
   const machine = document.createElement('div'); layout.appendChild(machine);
   const marquee = document.createElement('div'); marquee.className = 'marquee'; marquee.textContent = 'Vegas 3×3'; machine.appendChild(marquee);
-  if ((ui.freeSpins||0) > 0) {
-    const fs = document.createElement('div'); fs.className = 'subtle'; fs.textContent = `Free Spins: ${ui.freeSpins}`; machine.appendChild(fs);
-  }
   const cab = document.createElement('div'); cab.className = 'cabinet'; machine.appendChild(cab);
+  // Win counter (mechanical-style) above the reels
+  const counter = document.createElement('div'); counter.className = 'win-counter';
+  // Currency symbol element (fixed, non-flipping)
+  const cur = document.createElement('div'); cur.className = 'counter-currency'; cur.textContent = currencySymbol(); counter.appendChild(cur);
+  cab.appendChild(counter);
   const stage = document.createElement('div'); stage.className = 'stage'; cab.appendChild(stage);
   const reelsWrap = document.createElement('div'); reelsWrap.className = 'reels'; stage.appendChild(reelsWrap);
     const cellEls = [];
@@ -1261,11 +1323,12 @@ function renderCasino() {
     updateTotal();
     const spinBtn = el('button', { class: 'btn good', text: 'Spin 🎰' });
   spinBtn.onclick = ()=> spinSlotsMulti(cellEls, spinBtn, stage);
+    // Sound toggle + volume
     controls.appendChild(selBet); controls.appendChild(selLines); controls.appendChild(total);
     const spinBox = document.createElement('div'); spinBox.className = 'panelish spinbox'; machine.appendChild(spinBox);
     spinBox.appendChild(spinBtn);
-    // Result
-  const res = document.createElement('div'); res.className = 'result'; res.textContent = ui.lastWin ? `Won ${fmt.format(ui.lastWin)} last spin` : '—'; machine.appendChild(res);
+    // Free spins badge directly under the Spin button (centered by spinBox grid)
+  const fsBadge = document.createElement('div'); fsBadge.className = 'fs-badge'; fsBadge.setAttribute('data-role','fs'); spinBox.appendChild(fsBadge);
 
   // Right column: Total winnings first, then rules, then paytable
   const colRight = document.createElement('div'); colRight.className = 'side'; layout.appendChild(colRight);
@@ -1294,6 +1357,9 @@ function renderCasino() {
   // draw initial payline guides
   requestAnimationFrame(()=> {
     drawSlotsLines(stage, cellEls, ui.lines, []);
+    setWinCounter((ui.lastWin||0), false);
+    updateCounterCurrency();
+    renderFreeSpins();
     renderTimeline();
     renderProfit();
     syncTimelineHeight();
@@ -1312,7 +1378,15 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
   const actualStake = isFree ? 0 : bet;
   if (!isFree && state.money < bet) { showToast('Not enough cash for this bet.', 'warn'); return; }
   ui.spinning = true; spinBtn.disabled=true;
+  // initialize audio on user gesture and play start cue
+  casinoEnsureAudio();
+  if (ui.sound !== false) casinoPlayStart();
+  // start continuous spin sound
+  casinoSpinStart();
+  // Reset counter to 0 immediately on spin start
+  setWinCounter(0, false);
   if (isFree) { ui.freeSpins = Math.max(0, (ui.freeSpins||0) - 1); saveState(); }
+  renderFreeSpins();
   if (actualStake > 0) addMoney(-actualStake, 'Slots spin');
   // clear win highlights
   document.querySelectorAll('.slots .cell.win').forEach(e=>e.classList.remove('win'));
@@ -1320,6 +1394,8 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
   // Preview active lines briefly, then spin
   drawSlotsLines(stage, cellEls, ui.lines, 'preview');
   const previewMs = 350;
+  // Precompute final grid so each column can settle to its real symbols when it stops
+  const finalGrid = slotsGrid();
   setTimeout(()=>{
     clearSlotsLines(stage);
     // Fallback with column intervals to ensure visible updates across browsers
@@ -1343,6 +1419,10 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
           clearInterval(t);
           timers[col] = null;
           running--;
+          // stop thunk and fix values immediately for this column
+          colCells.forEach(c => { c.el.classList.remove('spin'); c.el.classList.add('stop'); c.el.textContent = finalGrid[c.r][c.c]; });
+          casinoPlayStop(col);
+          setTimeout(()=> colCells.forEach(c => c.el.classList.remove('stop')), 240);
           if (running === 0) finish();
         }
       }, 80);
@@ -1352,8 +1432,9 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
     setTimeout(()=>{ if (running > 0) { timers.forEach(x=> x && clearInterval(x)); finish(); } }, Math.max(...durations) + Math.max(...delays) + 200);
   }, previewMs);
   function finish(){
-    const grid = slotsGrid(); ui.grid = grid;
+    const grid = finalGrid; ui.grid = grid;
     cellEls.forEach(c=>{ c.el.classList.remove('spin'); c.el.textContent = grid[c.r][c.c]; });
+    casinoSpinStop();
     // evaluate lines
     const linesToEval = PAYLINES.slice(0, Math.max(1, Math.min(PAYLINES.length, ui.lines)));
     let totalWin = 0; const winners=[];
@@ -1363,12 +1444,13 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
     });
     // highlight winners
     winners.forEach(w=>{ const ln = w.ln; for(let c=0;c<3;c++){ const r=ln[c]; const cell = cellEls.find(x=>x.r===r && x.c===c); if(cell) cell.el.classList.add('win'); } });
-    // draw lines, highlighting winners
+    // draw lines, highlighting winners, with flash after all columns stopped
     const winnerIdx = winners.map(w=> PAYLINES.findIndex(pl=> pl.length===w.ln.length && pl.every((v,i)=>v===w.ln[i]))).filter(i=>i>=0);
     drawSlotsLines(stage, cellEls, ui.lines, winnerIdx);
     ui.lastWin = totalWin;
     if (totalWin>0) { addMoney(totalWin, 'Slots win'); addXP(Math.min(25, Math.round(totalWin/400)), 'Slots'); }
     else addXP(2, 'Slots');
+    if (totalWin>0) casinoPlayWin(totalWin);
     // Award free spins if 3+ wilds anywhere on the grid
     try {
       const flat = grid.flat();
@@ -1376,6 +1458,7 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
       if (wilds >= 3) {
         ui.freeSpins = (ui.freeSpins||0) + 5;
         showToast('Free Spins +5 (🃏)', 'good');
+        renderFreeSpins();
       }
     } catch {}
     // Update recent list with descriptive entry
@@ -1384,7 +1467,8 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
     ui.recent.push({ net: totalWin - actualStake, total: actualStake, win: totalWin, desc, free: isFree });
     if (ui.recent.length > 100) ui.recent.shift();
     saveState(); ui.spinning=false; spinBtn.disabled=false;
-    const res = document.querySelector('.slots .result'); if (res) res.textContent = totalWin ? `${isFree?'Free Spin — ':''}Won ${fmt.format(totalWin)}!` : (isFree ? 'Free Spin — no win' : 'No win — try again');
+    // Result text removed (counter and timeline cover feedback)
+    setWinCounter(totalWin, true);
     renderTimeline();
     renderProfit();
     syncTimelineHeight();
@@ -1450,6 +1534,110 @@ function renderProfit() {
   } catch {}
 }
 
+function renderFreeSpins() {
+  try {
+    ensureCasinoUI();
+    const ui = state.ui.casino;
+    const fs = (ui.freeSpins || 0);
+    const el = document.querySelector('.slots .fs-badge[data-role="fs"]');
+    if (!el) return;
+    el.textContent = `Free Spins: ${fs}`;
+    el.classList.toggle('active', fs > 0);
+  } catch {}
+}
+
+// --- Casino Audio (simple WebAudio SFX) ---
+let casinoAudio = { ctx: null, master: null, spin: null };
+function casinoEnsureAudio(force = false) {
+  try {
+    ensureCasinoUI();
+    if (!force && state.ui.casino.sound === false) return;
+    if (!casinoAudio.ctx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+      const ctx = new Ctx();
+      const gain = ctx.createGain();
+      const vol = Math.max(0, Math.min(1, (state.ui.casino.volume ?? 0.5)));
+      gain.gain.value = (0.05 + 0.85 * vol); // much louder headroom
+      gain.connect(ctx.destination);
+      casinoAudio.ctx = ctx; casinoAudio.master = gain;
+    }
+    if (casinoAudio.ctx && casinoAudio.ctx.state === 'suspended') { casinoAudio.ctx.resume(); }
+  } catch {}
+}
+function casinoPlayTest(){ try { casinoEnsureAudio(true); tone(660,0.12,'square',0.12); setTimeout(()=> tone(990,0.12,'square',0.12), 140); } catch {} }
+function casinoApplyVolume(){ try { ensureCasinoUI(); if (!casinoAudio.master) return; const v = Math.max(0, Math.min(1, (state.ui.casino.volume ?? 0.5))); casinoAudio.master.gain.value = (0.05 + 0.85 * v); } catch {} }
+function casinoPlayStart() { if (!casinoReady()) return; tone(740, 0.09, 'triangle', 0.08); setTimeout(()=> tone(880, 0.08, 'triangle', 0.08), 90); }
+function casinoPlayStop(col){ if (!casinoReady()) return; const base=180; const f= base + col*40; thunk(f); }
+function casinoPlayWin(amount){ if (!casinoReady()) return; const ratio = Math.min(1.5, Math.max(0.8, amount/5000)); const seq=[880,1040,1320,1760]; seq.forEach((f,i)=> setTimeout(()=> tone(f, 0.09, 'sine', 0.035*ratio), i*90)); }
+function casinoPlayAward(){ if (!casinoReady()) return; const seq=[660,990,1320]; seq.forEach((f,i)=> setTimeout(()=> tone(f,0.12,'square',0.04), i*120)); }
+function casinoReady(){ try { ensureCasinoUI(); return state.ui.casino.sound !== false && casinoAudio.ctx && casinoAudio.master; } catch { return false; } }
+function casinoSpinStart(){ try { casinoSpinStop(); if (!casinoReady()) return; const ctx=casinoAudio.ctx; const src=ctx.createBufferSource(); const len = Math.floor(ctx.sampleRate * 0.4); const buf = ctx.createBuffer(1, len, ctx.sampleRate); const data = buf.getChannelData(0); for(let i=0;i<len;i++){ data[i]=(Math.random()*2-1)*0.6; } src.buffer=buf; src.loop=true; const filter=ctx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.value=260; filter.Q.value=0.9; const g=ctx.createGain(); g.gain.value = sfxGain(0.10); src.connect(filter); filter.connect(g); g.connect(casinoAudio.master); src.start(); casinoAudio.spin = { src, g, filter }; } catch {} }
+function casinoSpinStop(){ try { if (casinoAudio.spin && casinoAudio.spin.src){ casinoAudio.spin.src.stop(); } casinoAudio.spin=null; } catch {} }
+function sfxGain(x){ try { const ua = navigator.userAgent; const isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua); return isSafari ? x*2.2 : x; } catch { return x; } }
+function tone(freq, dur, type='sine', gain=0.03){ try { if (!casinoAudio.ctx) return; const ctx=casinoAudio.ctx; const osc=ctx.createOscillator(); const g=ctx.createGain(); osc.type=type; osc.frequency.value=freq; const gg=sfxGain(gain); g.gain.setValueAtTime(gg, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur); osc.connect(g); g.connect(casinoAudio.master); osc.start(); osc.stop(ctx.currentTime + dur); } catch {} }
+function thunk(freq=160){ try { if (!casinoAudio.ctx) return; const ctx=casinoAudio.ctx; const osc=ctx.createOscillator(); const g=ctx.createGain(); osc.type='sine'; osc.frequency.setValueAtTime(freq, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(freq*0.6, ctx.currentTime+0.08); const gg=sfxGain(0.05); g.gain.setValueAtTime(gg, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.12); osc.connect(g); g.connect(casinoAudio.master); osc.start(); osc.stop(ctx.currentTime+0.13); // tiny noise click
+  const buffer=ctx.createBuffer(1, ctx.sampleRate*0.06, ctx.sampleRate); const data=buffer.getChannelData(0); for(let i=0;i<data.length;i++){ data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,2); } const src=ctx.createBufferSource(); src.buffer=buffer; const gn=ctx.createGain(); gn.gain.value=0.03; src.connect(gn); gn.connect(casinoAudio.master); src.start(); } catch {} }
+// Mechanical counter helpers for win display
+function ensureCounterDigits(container, count) {
+  const digitsNow = Array.from(container.querySelectorAll('.counter-digit'));
+  const need = 6; // fixed six digits
+  const anchor = container.querySelector('.counter-currency');
+  while (digitsNow.length < need) {
+    const d = document.createElement('div'); d.className = 'counter-digit';
+    const wheel = document.createElement('div'); wheel.className = 'counter-wheel';
+    for (let i=0;i<10;i++) { const v=document.createElement('div'); v.className='counter-val'; v.textContent=String(i); wheel.appendChild(v); }
+    d.appendChild(wheel);
+    container.insertBefore(d, anchor ? anchor.nextSibling : null); // insert after currency if present
+    digitsNow.push(d);
+  }
+  while (container.querySelectorAll('.counter-digit').length > need) {
+    const el = container.querySelector('.counter-digit');
+    if (!el) break;
+    el.remove();
+  }
+}
+
+function setWinCounter(value, animate=true) {
+  try {
+    const container = document.querySelector('.slots .cabinet .win-counter');
+    if (!container) return;
+    const v = Math.max(0, Math.floor(value || 0));
+    const s = String(v).padStart(6,'0');
+    ensureCounterDigits(container, s.length);
+    const digits = Array.from(container.querySelectorAll('.counter-digit'));
+    // Map digits right-aligned
+    const pad = Math.max(digits.length - s.length, 0);
+    // Measure a digit height for precise pixel translations
+    const digitHeight = digits[0] ? Math.round(digits[0].getBoundingClientRect().height) : 44;
+    // Ensure wheel total height is 10 * digitHeight
+    digits.forEach((d)=>{ const wheel=d.firstChild; if (!wheel) return; wheel.style.height = (digitHeight * 10) + 'px'; });
+    // Move wheels
+    digits.forEach((d)=>{ const wheel=d.firstChild; if (!wheel) return; if (!animate) { wheel.style.transition='none'; } });
+    // If not animating, set instantly and restore transition next tick
+    const apply = () => {
+      digits.forEach((d, idx)=>{
+        const wheel=d.firstChild; if (!wheel) return;
+        const ch = s[idx-pad] ? Number(s[idx-pad]) : 0;
+        wheel.style.transform = `translateY(-${ch * digitHeight}px)`;
+      });
+    };
+    if (!animate) {
+      apply();
+      requestAnimationFrame(()=>{ digits.forEach(d=>{ const wheel=d.firstChild; if (wheel) wheel.style.transition=''; }); });
+      return;
+    }
+    // Animate from current to target
+    requestAnimationFrame(apply);
+  } catch {}
+}
+
+function updateCounterCurrency() {
+  try {
+    const el = document.querySelector('.slots .cabinet .win-counter .counter-currency');
+    if (el) el.textContent = currencySymbol();
+  } catch {}
+}
+
 // Keep the left timeline max-height aligned to the height of the right panels
 function syncTimelineHeight() {
   try {
@@ -1491,7 +1679,7 @@ function drawSlotsLines(stage, cellEls, linesCount, winnerIdx){
     }
     // Only draw when we actually have winners
     if (!Array.isArray(winnerIdx) || winnerIdx.length === 0) return;
-    const overlay = document.createElement('div'); overlay.className = 'lines';
+    const overlay = document.createElement('div'); overlay.className = 'lines show';
     const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); overlay.appendChild(svg);
     stage.appendChild(overlay);
     const rectStage = stage.getBoundingClientRect();
