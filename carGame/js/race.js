@@ -39,3 +39,11 @@ export function simulateRaceOutcome(car, opponentPerf) {
   return { win, failedPart, winChance, netProfitMult };
 }
 
+export const RACE_EVENTS = [
+    { id: 'local_meet', name: 'Local Meet', opponentPerf: 55, entryFee: 500, prize: 1200, heat: 1, trackType: 'straight' },
+    { id: 'warehouse_run', name: 'Warehouse Run', opponentPerf: 65, entryFee: 1000, prize: 2500, heat: 2, trackType: 'industrial' },
+    { id: 'highway_pull', name: 'Highway Pull', opponentPerf: 78, entryFee: 2500, prize: 6000, heat: 4, trackType: 'highway' },
+    { id: 'docks_sprint', name: 'Docks Sprint', opponentPerf: 85, entryFee: 5000, prize: 12000, heat: 6, trackType: 'industrial' },
+    { id: 'mountain_pass', name: 'Mountain Pass Touge', opponentPerf: 92, entryFee: 10000, prize: 25000, heat: 8, trackType: 'mountain' },
+    { id: 'midnight_grand_prix', name: 'Midnight Grand Prix', opponentPerf: 98, entryFee: 20000, prize: 50000, heat: 12, trackType: 'highway' },
+];

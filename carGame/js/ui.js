@@ -39,7 +39,10 @@ export function el(tag, attrs = {}, children = []) {
       e.setAttribute(k, v);
     }
   }
-  for (const c of children) e.appendChild(c);
+  for (const c of children) {
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  }
   return e;
 }
 
@@ -612,40 +615,75 @@ export function updatePartsPricesUI({ state, PARTS, fmt }) {
   });
 }
 
-export function renderRacesView({ state, PARTS, avgCondition, conditionStatus, canRace, onRaceCar }) {
+export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
-  if (!state.garage.length) {
-    view.appendChild(el('div', { class: 'panel notice', text: 'No cars to race. Buy one first.' }));
-    return;
-  }
-  const panel = el('div', { class: 'panel' }, [
-    el('div', { class: 'row' }, [ el('h3', { text: 'Organize Street Race' }), el('div', { class: 'spacer' }) ]),
-    el('table', {}, [
-      el('thead', {}, [ el('tr', {}, [
-        el('th', { text: 'Car' }),
-        el('th', { text: 'Perf' }),
-        el('th', { text: 'Condition' }),
-        el('th', { text: '' }),
-      ])]),
-      el('tbody', {}, state.garage.map((car, idx) => {
-        const avg = Math.round(avgCondition(car));
-        const st = conditionStatus(avg);
-        const condTag = car.failed ? el('span', { class: 'tag bad', text: 'Failed' }) : el('span', { class: `tag ${st.cls}`, text: `${st.label} (${avg}%)` });
-        const broken = PARTS.find(p => (car.parts[p.key] ?? 100) < 60);
-        const condCell = broken
-          ? [ condTag, el('div', { class: 'subtle', text: `Needs replacing: ${broken.name}` }) ]
-          : [ condTag ];
-        return el('tr', {}, [
-          el('td', { text: car.model }),
-          el('td', { text: String(car.perf) }),
-          el('td', {}, condCell),
-          el('td', {}, [ el('button', { class: 'btn good', text: 'Race', onclick: () => onRaceCar(idx), disabled: !canRace(car) }) ]),
-        ]);
-      }))
+  const header = el('div', { class: 'panel' }, [
+    el('div', { class: 'row' }, [
+      el('h3', { text: 'Street Race Events' }),
+      el('div', { class: 'spacer' }),
+      el('span', { class: 'tag info', text: 'Choose an event' })
     ])
   ]);
-  view.appendChild(panel);
+  view.appendChild(header);
+
+  const grid = el('div', { class: 'race-events-grid' });
+  RACE_EVENTS.forEach(event => {
+    const suitableCar = state.garage.find(c => canRace(c) && c.perf >= event.opponentPerf - 15);
+    const carOptions = state.garage.filter(c => canRace(c));
+
+    const carSwitcher = el('div', { class: 'car-switcher' });
+    if (carOptions.length > 0) {
+      const carDisplay = el('span', { class: 'car-display', text: `${carOptions[0].model} (P:${carOptions[0].perf})` });
+      carSwitcher.setAttribute('data-selected-car-idx', '0');
+
+      const prevBtn = el('button', { class: 'arrow', text: '‹' });
+      const nextBtn = el('button', { class: 'arrow', text: '›' });
+
+      const switchCar = (dir) => {
+        let currentIdx = parseInt(carSwitcher.getAttribute('data-selected-car-idx'), 10);
+        currentIdx = (currentIdx + dir + carOptions.length) % carOptions.length;
+        const selectedCar = carOptions[currentIdx];
+        carDisplay.textContent = `${selectedCar.model} (P:${selectedCar.perf})`;
+        carSwitcher.setAttribute('data-selected-car-idx', String(currentIdx));
+      };
+
+      prevBtn.onclick = () => switchCar(-1);
+      nextBtn.onclick = () => switchCar(1);
+
+      carSwitcher.appendChild(prevBtn);
+      carSwitcher.appendChild(carDisplay);
+      carSwitcher.appendChild(nextBtn);
+    } else {
+      carSwitcher.appendChild(el('span', { class: 'car-display subtle', text: 'No cars available' }));
+    }
+
+    const card = el('div', { class: 'panel event-card' + (!suitableCar ? ' disabled' : '') }, [
+      el('div', { class: `event-card-track track-${event.trackType}` }, [
+        el('h4', { text: event.name })
+      ]),
+      el('div', { class: 'event-card-body' }, [
+        el('div', { class: 'event-details-grid' }, [
+          el('div', { class: 'detail-item' }, [el('span', { class: 'subtle' }, ['Opponent Perf']), el('strong', { text: String(event.opponentPerf) })]),
+          el('div', { class: 'detail-item' }, [el('span', { class: 'subtle' }, ['Entry Fee']), el('strong', { text: fmt.format(event.entryFee) })]),
+          el('div', { class: 'detail-item prize' }, [el('span', { class: 'subtle' }, ['Prize']), el('strong', { class: 'good', text: fmt.format(event.prize) })]),
+        ]),
+        el('div', { class: 'event-actions' }, [
+          carSwitcher,
+          el('button', { class: 'btn good', text: 'Enter Race', onclick: (e) => {
+              const switcher = e.target.closest('.event-card').querySelector('.car-switcher');
+              const selectedCarOptionIndex = parseInt(switcher.getAttribute('data-selected-car-idx'), 10);
+              const selectedCar = carOptions[selectedCarOptionIndex];
+              if (!selectedCar) return;
+              const originalGarageIndex = state.garage.findIndex(c => c.id === selectedCar.id);
+              if (originalGarageIndex !== -1) onRaceCar(originalGarageIndex, event.id);
+          }, disabled: !suitableCar })
+        ])
+      ])
+    ]);
+    grid.appendChild(card);
+  });
+  view.appendChild(grid);
 }
 
 export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar }) {
@@ -783,7 +821,7 @@ export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureMod
   view.appendChild(allPanel);
 }
 
-export function updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId }) {
+export function updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId, drawSparkline }) {
   for (const car of state.illegalMarket) {
     const priceEl = document.querySelector(`[data-car-price="${car.id}"]`);
     if (priceEl) priceEl.textContent = fmt.format(car.price);
@@ -792,7 +830,7 @@ export function updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId }) {
     const canvas = document.querySelector(`canvas[data-car-spark="${car.id}"]`);
     if (canvas) drawSparkline(canvas, car.priceHistory || [car.price], '#57b6ff');
   }
-  for (const car of state.garage) {
+  for (const car of (state.garage || [])) {
     const tpriceEl = document.querySelector(`[data-own-tprice="${car.id}"]`);
     if (tpriceEl) tpriceEl.textContent = fmt.format(car.valuation ?? 0);
     const canvas = document.querySelector(`canvas[data-own-spark="${car.id}"]`);
@@ -818,7 +856,7 @@ export function updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId }) {
   }
 }
 
-export function renderGarageView({ state, PARTS, fmt, modelId, isSellConfirm, onSellClickById, onRaceCar, onOpenImagePicker, isCarOpen, onToggleCarOpen }) {
+export function renderGarageView({ state, PARTS, fmt, modelId, isSellConfirm, onSellClickById, onRaceCar, onOpenImagePicker, isCarOpen, onToggleCarOpen, avgCondition, conditionStatus }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
   const capUsed = state.garage.length;
@@ -837,8 +875,8 @@ export function renderGarageView({ state, PARTS, fmt, modelId, isSellConfirm, on
     return;
   }
   for (const [idx, car] of state.garage.entries()) {
-    const avg = Math.round(PARTS.reduce((a, p) => a + (car.parts[p.key] ?? 100), 0) / PARTS.length);
-    const stCls = avg >= 80 ? 'ok' : avg >= 60 ? 'info' : 'bad';
+    const avg = Math.round(avgCondition(car));
+    const st = conditionStatus(avg);
     const header = el('div', { class: 'row' }, [
       el('h3', { text: `${car.model} ` }),
       el('span', { class: `tag ${stCls}`, text: `${avg}%` }),

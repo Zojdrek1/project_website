@@ -1,8 +1,9 @@
 // --- Utility helpers ---
 import { PARTS, MODELS } from './js/data.js';
 import { state, setState, defaultState, saveState, loadState, migrateState } from './js/state.js';
-import { canRace, simulateRaceOutcome } from './js/race.js';
+import { canRace, simulateRaceOutcome, RACE_EVENTS } from './js/race.js';
 import { ensureModelTrends, refreshIllegalMarket, refreshPartsPrices, tickPartsPricesCore, tickIllegalMarketCore, PRICE_HISTORY_MAX, PARTS_TICK_MS, ILLEGAL_TICK_MS, ILLEGAL_LISTING_REFRESH_MS } from './js/economy.js';
+import { showRaceAnimation } from './js/raceAnimation.js';
 import { el, ensureToasts, showToast, getIconSVG, renderNavUI, renderCenterNavUI, drawSparkline, renderMarketView, updateMarketPricesAndTrendsUI, renderGarageFullView, renderPartsView, updatePartsPricesUI as updatePartsPricesUI_M, renderRacesView, layoutCarBreakdown, getBodyStyle, getSilhouettePath } from './js/ui.js';
 let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 function currencySymbol() {
@@ -366,113 +367,37 @@ function conditionStatus(avg) {
   if (avg >= 40) return { label: 'Risky', cls: 'bad' };
   return { label: 'Critical', cls: 'bad' };
 }
-// canRace and simulateRaceOutcome moved to ./js/race.js
 
-function applyRaceOutcome(car, outcome, bet) {
-  if (outcome.failedPart) {
-    const key = outcome.failedPart;
-    const cond = car.parts[key] ?? 100;
-    const drop = Math.round(rand(15, 35));
-    car.parts[key] = clamp(cond - drop, 0, 100);
-    car.failed = true;
-    pushLog(`${car.model} DNF — ${PARTS.find(p=>p.key===key).name} failed during the race! Vehicle must be repaired before racing again.`);
-    if (bet && bet > 0) addMoney(-bet, 'Race bet lost (DNF)');
-    return;
-  }
-  if (outcome.win) {
-    if (bet && bet > 0) {
-      const profit = Math.round(bet * outcome.netProfitMult);
-      addMoney(profit, 'Race bet won');
-    }
-    addXP(Math.round(12 + car.perf / 10), `${car.model} race win`);
-    addHeat(3, 'Street race');
-  } else {
-    pushLog(`${car.model} lost the race. No payout.`);
-    if (bet && bet > 0) addMoney(-bet, 'Race bet lost');
-    addXP(4, `${car.model} race experience`);
-    addHeat(2, 'Street race');
-  }
-  const wearPart = sample(PARTS).key;
-  car.parts[wearPart] = clamp((car.parts[wearPart] ?? 100) - Math.round(rand(5, 12)), 0, 100);
-}
-
-function showRaceAnimation(car, outcome, done) {
-  const modal = document.createElement('div');
-  modal.className = 'race-modal open';
-  modal.id = 'raceModal';
-  const backdrop = document.createElement('div'); backdrop.className = 'race-backdrop'; backdrop.onclick = () => {};
-  const panel = document.createElement('div'); panel.className = 'race-panel';
-  // pick a simple opponent for the animation label
-  const opp = sample(MODELS);
-  const title = document.createElement('div'); title.className = 'race-title'; title.textContent = `Racing: ${car.model} vs ${opp.model}`;
-  const track = document.createElement('div'); track.className = 'race-track';
-  const inner = document.createElement('div'); inner.className = 'race-track-inner'; track.appendChild(inner);
-  const carEl = document.createElement('div'); carEl.className = 'race-car'; carEl.textContent = '🚗'; track.appendChild(carEl);
-  const oppEl = document.createElement('div'); oppEl.className = 'race-car opponent'; oppEl.textContent = '🚙'; track.appendChild(oppEl);
-  const flag = document.createElement('div'); flag.className = 'race-flag'; flag.textContent = '🏁'; track.appendChild(flag);
-  const result = document.createElement('div'); result.className = 'race-result'; result.textContent = '';
-  // legend + actions
-  const legend = document.createElement('div'); legend.className = 'race-legend';
-  legend.innerHTML = `<span class="tag">You (red 🚗): ${car.model}</span> <span class="tag">Rival (blue 🚙): ${opp.model}</span>`;
-  const actions = document.createElement('div'); actions.className = 'race-actions';
-  // Bet slider
-  const maxBet = Math.max(0, Math.min(Math.floor(state.money * 0.25), 50000));
-  const minBet = Math.min(1000, maxBet);
-  const betWrap = document.createElement('div'); betWrap.className = 'options-field';
-  const betLabel = document.createElement('strong'); betLabel.textContent = 'Bet:'; betWrap.appendChild(betLabel);
-  const betVal = document.createElement('span'); betVal.textContent = fmt.format(minBet || 0); betWrap.appendChild(betVal);
-  const betInput = document.createElement('input'); betInput.type = 'range'; betInput.min = (maxBet > 0 ? String(Math.max(0, minBet)) : '0'); betInput.max = String(maxBet); betInput.step = '100'; betInput.value = (maxBet > 0 ? String(Math.max(0, minBet)) : '0');
-  betInput.oninput = () => { betVal.textContent = fmt.format(parseInt(betInput.value||'0',10)); };
-  betWrap.appendChild(betInput);
-  panel.appendChild(betWrap);
-  const startBtn = document.createElement('button'); startBtn.className = 'btn good'; startBtn.textContent = 'Start Race';
-  const cancelBtn = document.createElement('button'); cancelBtn.className = 'btn'; cancelBtn.textContent = 'Cancel';
-  cancelBtn.onclick = () => { modal.remove(); };
-  actions.appendChild(startBtn); actions.appendChild(cancelBtn);
-  panel.appendChild(title); panel.appendChild(legend); panel.appendChild(track); panel.appendChild(actions); panel.appendChild(result);
-  modal.appendChild(backdrop); modal.appendChild(panel);
-  document.body.appendChild(modal);
-  // Configure endpoints based on outcome (player leads slightly on win)
-  if (outcome.failedPart) {
-    carEl.style.setProperty('--end', 'calc(100% - 80px)');
-    oppEl.style.setProperty('--end', 'calc(100% - 44px)');
-  } else if (outcome.win) {
-    carEl.style.setProperty('--end', 'calc(100% - 44px)');
-    oppEl.style.setProperty('--end', 'calc(100% - 64px)');
-  } else {
-    carEl.style.setProperty('--end', 'calc(100% - 64px)');
-    oppEl.style.setProperty('--end', 'calc(100% - 44px)');
-  }
-  carEl.style.setProperty('--dur', '2.2s');
-  oppEl.style.setProperty('--dur', '2.2s');
-  // Start handler to launch animation
-  startBtn.onclick = () => {
-    startBtn.disabled = true;
-    const bet = parseInt(betInput.value || '0', 10) || 0;
-    if (bet > state.money) { showToast('Not enough cash for this bet.', 'warn'); startBtn.disabled = false; return; }
-    carEl.classList.add('run');
-    oppEl.classList.add('run');
-    setTimeout(() => {
-      if (outcome.failedPart) { result.textContent = 'DNF — part failed!'; result.style.color = '#ff9e9e'; }
-      else if (outcome.win) { result.textContent = 'Victory!'; result.style.color = '#c9f7cf'; }
-      else { result.textContent = 'Defeat'; result.style.color = '#cfe8ff'; }
-    }, 1400);
-    setTimeout(() => {
-      modal.classList.remove('open');
-      modal.remove();
-      done && done(bet);
-    }, 2200);
-  };
-}
-
-function raceCar(garageIndex) {
+function raceCar(garageIndex, eventId) {
   const car = state.garage[garageIndex];
-  if (!car) return;
+  const event = RACE_EVENTS.find(e => e.id === eventId);
+  if (!car || !event) return;
   if (!canRace(car)) { showToast('Vehicle must be repaired before racing.', 'warn'); return; }
-  // Simulate using opponent perf chosen in animation as proxy (pass later into simulate, but we already simulate here)
-  const outcome = simulateRaceOutcome(car, undefined);
-  showRaceAnimation(car, outcome, (bet) => {
-    applyRaceOutcome(car, outcome, bet || 0);
+  if (state.money < event.entryFee) { showToast(`Not enough cash for the ${fmt.format(event.entryFee)} entry fee.`, 'warn'); return; }
+
+  addMoney(-event.entryFee, `${event.name} entry fee`);
+  const outcome = simulateRaceOutcome(car, event.opponentPerf);
+
+  showRaceAnimation(car, event, outcome, () => {
+    // Apply outcome after animation
+    if (outcome.failedPart) {
+      const key = outcome.failedPart;
+      const cond = car.parts[key] ?? 100;
+      const drop = Math.round(rand(15, 35));
+      car.parts[key] = clamp(cond - drop, 0, 100);
+      car.failed = true;
+      pushLog(`${car.model} DNF — ${PARTS.find(p=>p.key===key).name} failed during the race! Vehicle must be repaired before racing again.`);
+    } else if (outcome.win) {
+      addMoney(event.prize, `${event.name} win`);
+      addXP(Math.round(12 + car.perf / 10), `${car.model} race win`);
+      addHeat(event.heat, 'Street race');
+    } else {
+      pushLog(`${car.model} lost the race. No payout.`);
+      addXP(4, `${car.model} race experience`);
+      addHeat(Math.round(event.heat / 2), 'Street race');
+    }
+    const wearPart = sample(PARTS).key;
+    car.parts[wearPart] = clamp((car.parts[wearPart] ?? 100) - Math.round(rand(5, 12)), 0, 100);
     render();
     saveState();
   });
@@ -915,7 +840,7 @@ function refreshMarketAndRender() { refreshIllegalMarket(); render(); saveState(
 // drawSparkline moved to ui.js
 
 // --- In-place UI updates (no layout bounce) ---
-function updateMarketPricesAndTrends() { updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId }); }
+function updateMarketPricesAndTrends() { updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId, drawSparkline }); }
 
 function updatePartsPricesUI() { updatePartsPricesUI_M({ state, PARTS, fmt }); }
 
@@ -1190,7 +1115,7 @@ function render() {
   if (!view) return;
   if (currentView === 'market') {
     if (!state.illegalMarket.length) { refreshIllegalMarket(); saveState(); }
-    renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar: (idx) => buyCar(idx) });
+    renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar: (idx) => buyCar(idx), isSellConfirm, onSellClickById });
   } else if (currentView === 'garage') {
     renderGarageFullView({
       state, PARTS, fmt, modelId,
@@ -1209,7 +1134,7 @@ function render() {
       saveState: () => saveState(),
     });
   } else if (currentView === 'races') {
-    renderRacesView({ state, PARTS, avgCondition, conditionStatus, canRace, onRaceCar: (idx) => raceCar(idx) });
+    renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar: raceCar, fmt });
   } else if (currentView === 'casino') {
     renderCasino();
   }
@@ -2327,26 +2252,29 @@ function refreshAll() {
   saveState();
 }
 
-// --- Init ---
-// Ensure any pre-existing save is migrated before first render
-migrateState();
-if (!state.illegalMarket.length) refreshIllegalMarket();
-if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
-ensureModelTrends();
-// Apply currency from save
-try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
-render();
-startPartsTicker();
-startIllegalTicker();
-startIllegalListingRefresher();
-renderDevPanel();
-ensureToasts();
-// Initial sticky positioning and keep it in sync on resize
-updateStickyOffsets();
-window.addEventListener('resize', scheduleStickyMeasure);
-// Start progress bar and hide loader after first render settles
-startLoaderProgress();
-setTimeout(hideLoader, 450);
+async function initializeGame() {
+  startLoaderProgress();
+  // Brief pause for loader to appear and start animating
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // Ensure any pre-existing save is migrated before first render
+  migrateState();
+  if (!state.illegalMarket.length) refreshIllegalMarket();
+  if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
+  ensureModelTrends();
+  // Apply currency from save
+  try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
+  startPartsTicker();
+  startIllegalTicker();
+  startIllegalListingRefresher();
+  renderDevPanel();
+  ensureToasts();
+  updateStickyOffsets();
+  window.addEventListener('resize', scheduleStickyMeasure);
+
+  render();
+  hideLoader();
+}
 
 // Toast helpers moved to ui.js
 // --- Storage (garage capacity) ---
@@ -2369,3 +2297,5 @@ function buyGarageSlot() {
   render();
   saveState();
 }
+
+initializeGame();
