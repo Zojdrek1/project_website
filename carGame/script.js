@@ -1,4 +1,9 @@
 // --- Utility helpers ---
+import { PARTS, MODELS } from './js/data.js';
+import { state, setState, defaultState, saveState, loadState, migrateState } from './js/state.js';
+import { canRace, simulateRaceOutcome } from './js/race.js';
+import { ensureModelTrends, refreshIllegalMarket, refreshPartsPrices, tickPartsPricesCore, tickIllegalMarketCore, PRICE_HISTORY_MAX, PARTS_TICK_MS, ILLEGAL_TICK_MS, ILLEGAL_LISTING_REFRESH_MS } from './js/economy.js';
+import { el, ensureToasts, showToast, getIconSVG, renderNavUI, renderCenterNavUI, drawSparkline, renderMarketView, updateMarketPricesAndTrendsUI, renderGarageFullView, renderPartsView, updatePartsPricesUI as updatePartsPricesUI_M, renderRacesView, layoutCarBreakdown, getBodyStyle, getSilhouettePath } from './js/ui.js';
 let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const rand = (min, max) => Math.random() * (max - min) + min;
 const randi = (min, max) => Math.floor(rand(min, max));
@@ -9,124 +14,23 @@ const CURRENCY_RATES = { USD: 1, GBP: 0.79, EUR: 0.93, JPY: 155, PLN: 4.0 };
 const getRate = () => CURRENCY_RATES[(state && state.currency) || 'USD'] || 1;
 
 // --- Game Data ---
-const PARTS = [
-  // Engine system (split)
-  { key: 'engine_block', name: 'Engine Block', basePrice: 4000 },
-  { key: 'induction', name: 'Induction (Turbo/Intake)', basePrice: 1500 },
-  { key: 'fuel_system', name: 'Fuel System', basePrice: 800 },
-  { key: 'cooling', name: 'Cooling (Radiator/Pump)', basePrice: 600 },
-  { key: 'ignition', name: 'Ignition (Coils/Plugs)', basePrice: 300 },
-  { key: 'timing', name: 'Timing (Belt/Chain)', basePrice: 700 },
-  { key: 'alternator', name: 'Alternator', basePrice: 350 },
-  { key: 'ecu', name: 'ECU/Sensors', basePrice: 900 },
-  // Drivetrain
-  { key: 'transmission', name: 'Transmission', basePrice: 2500 },
-  { key: 'clutch', name: 'Clutch', basePrice: 700 },
-  { key: 'differential', name: 'Differential', basePrice: 1200 },
-  // Running gear
-  { key: 'suspension', name: 'Suspension', basePrice: 1000 },
-  { key: 'tires', name: 'Tires', basePrice: 800 },
-  { key: 'brakes', name: 'Brakes', basePrice: 600 },
-  // Other
-  { key: 'exhaust', name: 'Exhaust', basePrice: 900 },
-  { key: 'battery', name: 'Battery', basePrice: 200 },
-  { key: 'electronics', name: 'Interior Electronics', basePrice: 600 },
-];
-
-const MODELS = [
-  // Existing fictional/global set
-  { model: 'Cobra GT', basePrice: 18000, perf: 80 },
-  { model: 'Veloce RS', basePrice: 24000, perf: 88 },
-  { model: 'Sakura Sport', basePrice: 14000, perf: 72 },
-  { model: 'Highland 4x4', basePrice: 16000, perf: 65 },
-  { model: 'Sting S', basePrice: 30000, perf: 95 },
-  { model: 'Metro Hatch', basePrice: 8000, perf: 50 },
-  { model: 'Silver Arrow', basePrice: 22000, perf: 78 },
-  { model: 'Comet R', basePrice: 28000, perf: 90 },
-  { model: 'Falcon V6', basePrice: 12000, perf: 62 },
-  { model: 'Zephyr Coupe', basePrice: 20000, perf: 75 },
-
-  // JDM additions (well‑known enthusiast models)
-  { model: 'Nissan Skyline GT-R R34', basePrice: 65000, perf: 98 },
-  { model: 'Toyota Supra Mk4 (A80)', basePrice: 52000, perf: 92 },
-  { model: 'Mazda RX-7 (FD3S)', basePrice: 38000, perf: 88 },
-  { model: 'Honda NSX (NA2)', basePrice: 90000, perf: 96 },
-  { model: 'Mitsubishi Lancer Evo VI', basePrice: 32000, perf: 86 },
-  { model: 'Subaru Impreza WRX STI (GC8)', basePrice: 28000, perf: 84 },
-  { model: 'Nissan Silvia (S15)', basePrice: 26000, perf: 82 },
-  { model: 'Toyota AE86 Trueno', basePrice: 18000, perf: 70 },
-  { model: 'Honda S2000 (AP2)', basePrice: 30000, perf: 85 },
-  { model: 'Nissan 300ZX (Z32)', basePrice: 22000, perf: 78 },
-  { model: 'Toyota Chaser (JZX100)', basePrice: 26000, perf: 80 },
-  { model: 'Toyota Aristo V300 (JZS161)', basePrice: 24000, perf: 76 },
-];
+// PARTS and MODELS moved to ./js/data.js
 
 // --- State ---
-const defaultState = () => ({
-  day: 1,
-  money: 20000,
-  level: 1,
-  xp: 0,
-  currency: 'USD',
-  heat: 0,
-  illegalMarket: [],
-  garage: [],
-  garagesPurchased: 0,
-  partsPrices: { legal: {}, illegal: {} },
-  modelTrends: {},
-  ui: { openCars: {}, showDev: false },
-  assets: { modelImages: {} },
-  log: [
-    'Welcome to ICS. Buy, fix, flip, and race.',
-    'Prices change daily. Illegal parts are cheaper, but sketchy...',
-  ],
-});
+// State helpers moved to ./js/state.js
 
-let state = loadState() || defaultState();
-// Migrate older saves to new shape (levels/percent parts/etc.)
-function migrateState() {
-  try {
-    if (!state || typeof state !== 'object') return;
-    if (typeof state.level !== 'number' || !isFinite(state.level)) state.level = 1;
-    if (typeof state.xp !== 'number' || !isFinite(state.xp)) state.xp = 0;
-    if (typeof state.garagesPurchased !== 'number' || !isFinite(state.garagesPurchased)) state.garagesPurchased = 0;
-    if (typeof state.currency !== 'string') state.currency = 'USD';
-    if (typeof state.heat !== 'number' || !isFinite(state.heat)) state.heat = 0;
-    if (!state.modelTrends) state.modelTrends = {};
-    if (!state.ui || typeof state.ui !== 'object') state.ui = { openCars: {}, showDev: false };
-    if (!state.ui.openCars) state.ui.openCars = {};
-    if (typeof state.ui.showDev !== 'boolean') state.ui.showDev = false;
-    if (!state.assets || typeof state.assets !== 'object') state.assets = { modelImages: {} };
-    if (!state.assets.modelImages) state.assets.modelImages = {};
-    if (!state.partsPrices || typeof state.partsPrices !== 'object') state.partsPrices = { legal: {}, illegal: {} };
-    if (!state.partsPrices.legal) state.partsPrices.legal = {};
-    if (!state.partsPrices.illegal) state.partsPrices.illegal = {};
-    const normalizeCar = (car) => {
-      if (!car || !car.parts) return;
-      if (typeof car.failed !== 'boolean') car.failed = false;
-      for (const p of PARTS) {
-        const v = car.parts[p.key];
-        if (typeof v === 'boolean') car.parts[p.key] = v ? 100 : 0;
-        else if (typeof v !== 'number' || !isFinite(v)) car.parts[p.key] = 100;
-        else car.parts[p.key] = Math.max(0, Math.min(100, Math.round(v)));
-      }
-    };
-    if (Array.isArray(state.garage)) state.garage.forEach(normalizeCar);
-    if (Array.isArray(state.illegalMarket)) state.illegalMarket.forEach(normalizeCar);
-  } catch {}
-}
-migrateState();
-
-// --- Price ticker config ---
-const PARTS_TICK_MS = 8000; // parts update interval
-const ILLEGAL_TICK_MS = 7000; // illegal market price drift
-const ILLEGAL_LISTING_REFRESH_MS = 180000; // refresh shop listings every 3 minutes
-const PRICE_HISTORY_MAX = 60; // points per car chart
 let partsTicker = null;
 let illegalTicker = null;
 let renderTimer = null;
 const RERENDER_DEBOUNCE_MS = 900; // coalesce frequent updates
 let illegalRefreshTimer = null;
+let stickyMeasureTimer = null;
+let loaderHidden = false;
+let loaderTimer = null;
+let loaderProgress = 0;
+
+// In-memory cache to avoid retrying the same missing image URLs
+const failedImgCache = new Set();
 
 function scheduleRender() {
   if (renderTimer) return; // already scheduled
@@ -136,16 +40,47 @@ function scheduleRender() {
   }, RERENDER_DEBOUNCE_MS);
 }
 
-function saveState() {
-  try { localStorage.setItem('ics_state', JSON.stringify(state)); } catch {}
-}
-function loadState() {
+// Keep nav (#navHub) stuck directly beneath the sticky topbar by measuring its height
+function updateStickyOffsets() {
   try {
-    const s = localStorage.getItem('ics_state');
-    return s ? JSON.parse(s) : null;
-  } catch { return null; }
+    const root = document.documentElement;
+    const tb = document.querySelector('.topbar');
+    const h = tb ? Math.ceil(tb.getBoundingClientRect().height) : 56;
+    root.style.setProperty('--topbar-h', h + 'px');
+  } catch {}
 }
-function resetState() { state = defaultState(); ensureModelTrends(); refreshAll(); saveState(); }
+
+function scheduleStickyMeasure() {
+  if (stickyMeasureTimer) cancelAnimationFrame(stickyMeasureTimer);
+  stickyMeasureTimer = requestAnimationFrame(updateStickyOffsets);
+}
+
+// Loading overlay helpers
+function hideLoader() {
+  if (loaderHidden) return;
+  loaderHidden = true;
+  const el = document.getElementById('loader');
+  if (!el) return;
+  // complete progress bar
+  try { const f = document.getElementById('loaderFill'); if (f) f.style.width = '100%'; } catch {}
+  if (loaderTimer) { clearInterval(loaderTimer); loaderTimer = null; }
+  el.classList.add('hide');
+  setTimeout(() => el && el.remove && el.remove(), 320);
+}
+
+function startLoaderProgress() {
+  const fill = document.getElementById('loaderFill');
+  if (!fill || loaderTimer) return;
+  loaderProgress = 0;
+  loaderTimer = setInterval(() => {
+    // ease towards 80% while initializing
+    const increment = 5 + Math.random() * 10;
+    loaderProgress = Math.min(80, loaderProgress + increment);
+    fill.style.width = loaderProgress + '%';
+  }, 220);
+}
+
+function resetState() { setState(defaultState()); ensureModelTrends(); refreshAll(); saveState(); }
 
 // One-time auto reset: if an old save exists right now, start a new game once
 function maybeAutoResetOnExistingSave() {
@@ -224,124 +159,13 @@ function newCar(fromModel) {
   };
 }
 
-function refreshIllegalMarket() {
-  const n = marketSlots ? marketSlots() : 5;
-  ensureModelTrends();
-  state.illegalMarket = Array.from({ length: n }, () => {
-    const baseModel = sample(MODELS);
-    const car = newCar(baseModel);
-    // Seed car listing price history from model index adjusted by condition
-    const avgCond = PARTS.reduce((a, p) => a + (car.parts[p.key] ?? 100), 0) / PARTS.length;
-    const condFactor = 0.5 + (avgCond / 100) * 0.5; // 0.5..1.0
-    const series = state.modelTrends[baseModel.model] || [Math.round(baseModel.basePrice * getRate())];
-    const seedLen = Math.min(30, series.length);
-    const start = series.slice(series.length - seedLen);
-    const hist = start.map(v => {
-      const noisy = Math.round(v * condFactor * rand(0.97, 1.03));
-      const baseNow = Math.round(baseModel.basePrice * getRate());
-      return clamp(noisy, Math.round(baseNow * 0.5), Math.round(baseNow * 1.5));
-    });
-    car.priceHistory = hist;
-    car.price = hist[hist.length - 1];
-    return car;
-  });
-}
-
-function refreshPartsPrices() {
-  state.partsPrices.legal = {};
-  state.partsPrices.illegal = {};
-  const r = getRate();
-  for (const p of PARTS) {
-    state.partsPrices.legal[p.key] = Math.round(p.basePrice * r * rand(0.9, 1.2));
-    state.partsPrices.illegal[p.key] = Math.round(p.basePrice * r * rand(0.6, 1.0));
-  }
-}
-
-function tickPartsPrices() {
-  // Drift current prices like a stock ticker, within bounds around base price
-  const r = getRate();
-  for (const p of PARTS) {
-    const base = p.basePrice * r;
-    // Legal market drifts gently
-    const curL = state.partsPrices.legal[p.key] ?? Math.round(base * 1.0);
-    const mulL = rand(0.97, 1.03);
-    const nextL = Math.round(curL * mulL);
-    state.partsPrices.legal[p.key] = clamp(nextL, Math.round(base * 0.8), Math.round(base * 1.3));
-
-    // Illegal market is more volatile
-    const curI = state.partsPrices.illegal[p.key] ?? Math.round(base * 0.8);
-    const mulI = rand(0.95, 1.05);
-    const nextI = Math.round(curI * mulI);
-    state.partsPrices.illegal[p.key] = clamp(nextI, Math.round(base * 0.5), Math.round(base * 1.1));
-  }
-  // In-place UI update to avoid layout bounce
-  if (currentView === 'parts' || currentView === 'garage') updatePartsPricesUI();
-}
-
 function startPartsTicker() {
   if (partsTicker) clearInterval(partsTicker);
   partsTicker = setInterval(() => {
-    tickPartsPrices();
+    tickPartsPricesCore();
+    if (currentView === 'parts' || currentView === 'garage') updatePartsPricesUI();
     saveState();
   }, PARTS_TICK_MS);
-}
-
-function tickIllegalMarket() {
-  // Drift listed car prices and record history
-  for (const car of state.illegalMarket) {
-    const base = car.basePrice;
-    const cur = car.price;
-    const mul = rand(0.96, 1.05);
-    let next = Math.round(cur * mul);
-    const min = Math.round(base * 0.55);
-    const max = Math.round(base * 1.5);
-    if (next < min) next = min;
-    if (next > max) next = max;
-    car.price = next;
-    if (!Array.isArray(car.priceHistory)) car.priceHistory = [];
-    car.priceHistory.push(next);
-    if (car.priceHistory.length > PRICE_HISTORY_MAX) car.priceHistory.shift();
-  }
-  // Drift owned car valuations similarly, bounded by condition
-  for (const car of state.garage) {
-    const avg = avgCondition(car);
-    const condFactor = 0.5 + (avg / 100) * 0.5;
-    const base = car.basePrice * condFactor;
-    if (typeof car.valuation !== 'number') car.valuation = Math.round(base);
-    const mul = rand(0.97, 1.03);
-    let next = Math.round(car.valuation * mul);
-    const min = Math.round(base * 0.7);
-    const max = Math.round(base * 1.3);
-    if (next < min) next = min;
-    if (next > max) next = max;
-    car.valuation = next;
-    if (!Array.isArray(car.valuationHistory)) car.valuationHistory = [];
-    car.valuationHistory.push(next);
-    if (car.valuationHistory.length > PRICE_HISTORY_MAX) car.valuationHistory.shift();
-  }
-  // Drift global model indices
-  ensureModelTrends();
-  for (const m of MODELS) {
-    const base = m.basePrice;
-    const series = state.modelTrends[m.model] || [base];
-    const cur = series[series.length - 1] || Math.round(base);
-    const mul = rand(0.97, 1.03);
-    let next = Math.round(cur * mul);
-    const min = Math.round(base * 0.6);
-    const max = Math.round(base * 1.4);
-    if (next < min) next = min;
-    if (next > max) next = max;
-    series.push(next);
-    if (series.length > PRICE_HISTORY_MAX) series.shift();
-    state.modelTrends[m.model] = series;
-  }
-  // Heat decay and possible events
-  if ((state.heat || 0) > 0) {
-    state.heat = Math.max(0, state.heat - 1);
-    updateHeatUI();
-  }
-  maybeHeatEvent();
-  if (currentView === 'market') updateMarketPricesAndTrends();
 }
 
 function maybeHeatEvent() {
@@ -367,7 +191,10 @@ function maybeHeatEvent() {
 function startIllegalTicker() {
   if (illegalTicker) clearInterval(illegalTicker);
   illegalTicker = setInterval(() => {
-    tickIllegalMarket();
+    tickIllegalMarketCore();
+    if ((state.heat || 0) >= 0) updateHeatUI();
+    maybeHeatEvent();
+    if (currentView === 'market') updateMarketPricesAndTrends();
     saveState();
   }, ILLEGAL_TICK_MS);
 }
@@ -381,30 +208,12 @@ function startIllegalListingRefresher() {
   }, ILLEGAL_LISTING_REFRESH_MS);
 }
 
-function ensureModelTrends() {
-  if (!state.modelTrends) state.modelTrends = {};
-  for (const m of MODELS) {
-    const key = m.model;
-    if (!Array.isArray(state.modelTrends[key]) || !state.modelTrends[key].length) {
-      // Prefill a full series via bounded random walk around base price
-      const base = Math.round(m.basePrice * getRate());
-      const series = [];
-      let cur = Math.round(base * rand(0.9, 1.1));
-      for (let i = 0; i < PRICE_HISTORY_MAX; i++) {
-        const mul = rand(0.98, 1.02);
-        cur = Math.round(cur * mul);
-        const min = Math.round(base * 0.6);
-        const max = Math.round(base * 1.4);
-        if (cur < min) cur = min;
-        if (cur > max) cur = max;
-        series.push(cur);
-      }
-      state.modelTrends[key] = series;
-    }
-  }
-}
+// ensureModelTrends moved to economy.js
 
-function modelId(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+function modelId(name) {
+  // slugify and trim leading/trailing dashes to avoid paths like "...-" causing 404s
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 function advanceDay() {
   state.day += 1;
@@ -549,32 +358,7 @@ function conditionStatus(avg) {
   if (avg >= 40) return { label: 'Risky', cls: 'bad' };
   return { label: 'Critical', cls: 'bad' };
 }
-function canRace(car) { return !car.failed; }
-
-function simulateRaceOutcome(car, opponentPerf) {
-  const avg = avgCondition(car);
-  // Rating: performance plus small condition bonus
-  const myRating = car.perf + (avg - 60) * 0.3;
-  const oppRating = (opponentPerf ?? sample(MODELS).perf) + rand(-6, 6);
-  // Logistic win chance based on rating difference
-  const diff = myRating - oppRating;
-  const winChance = clamp(1 / (1 + Math.exp(-diff / 18)), 0.15, 0.9);
-  // Failure risk baseline even at 100%, increases with weak parts
-  let failRisk = 0.02;
-  let failedPart = null;
-  for (const p of PARTS) {
-    const cond = car.parts[p.key] ?? 100;
-    if (cond < 60) failRisk += (60 - cond) / 100 * 0.15;
-    if (!failedPart && cond < 60 && chance((60 - cond) / 100 * 0.3)) failedPart = p.key;
-  }
-  if (!failedPart && chance(failRisk)) failedPart = sample(PARTS).key;
-  const win = !failedPart && chance(winChance);
-  // House edge on odds: expected value slightly negative
-  const margin = 0.12;
-  const fairMult = 1 / winChance - 1; // net profit multiplier at fair odds
-  const netProfitMult = Math.max(0, fairMult * (1 - margin));
-  return { win, failedPart, winChance, netProfitMult };
-}
+// canRace and simulateRaceOutcome moved to ./js/race.js
 
 function applyRaceOutcome(car, outcome, bet) {
   if (outcome.failedPart) {
@@ -733,8 +517,8 @@ function repairCar(garageIndex, partKey, source) {
 const NAV = [
   { key: 'market', label: 'Illegal Market', icon: 'cart' },
   { key: 'garage', label: 'Garage', icon: 'garage' },
-  { key: 'parts', label: 'Parts Market', icon: 'wrench' },
   { key: 'races', label: 'Races', icon: 'flag' },
+  { key: 'casino', label: 'Casino', icon: 'casino' },
 ];
 let currentView = 'market';
 
@@ -770,54 +554,27 @@ function addHeat(amount, reason = '') {
 }
 
 function renderNav() {
-  const nav = document.getElementById('nav');
-  nav.innerHTML = '';
-  // Centered nav group
-  const center = document.createElement('div');
-  center.className = 'nav-center';
-  for (const item of NAV) {
-    const btn = document.createElement('button');
-    btn.className = item.key === currentView ? 'active' : '';
-    btn.setAttribute('aria-label', item.label);
-    btn.onclick = () => setView(item.key);
-    btn.innerHTML = getIconSVG(item.icon) + `<span class="label">${item.label}</span>`;
-    center.appendChild(btn);
-  }
-  nav.appendChild(center);
-
-  // Options on the right
-  const right = document.createElement('div');
-  right.className = 'options';
-  const cogBtn = document.createElement('button');
-  cogBtn.setAttribute('aria-label', 'Options');
-  cogBtn.innerHTML = getIconSVG('cog') + '<span class="label">Options</span>';
-  cogBtn.onclick = toggleOptionsMenu;
-  right.appendChild(cogBtn);
-
-  const pop = document.createElement('div');
-  pop.id = 'optionsPop';
-  pop.className = 'options-pop' + (state.ui && state.ui.showOptions ? ' open' : '');
-  // New Game
-  const newBtn = document.createElement('button');
-  newBtn.className = 'btn warn';
-  newBtn.textContent = 'New Game';
-  newBtn.onclick = () => {
-    showToast('Start a new game?', 'info', [
+  renderNavUI({
+    state,
+    currentView,
+    navItems: NAV,
+    onSetView: (key) => setView(key),
+    onToggleOptions: () => toggleOptionsMenu(),
+    onHideOptions: () => hideOptionsMenu(),
+    onToggleDev: () => toggleDevPanel(),
+    onNewGame: () => showToast('Start a new game?', 'info', [
       { label: 'Cancel', action: () => {} },
       { label: 'Confirm', action: () => resetState() }
-    ]);
-    hideOptionsMenu();
-  };
-  pop.appendChild(newBtn);
-  // Dev Tools toggle
-  const devBtn2 = document.createElement('button');
-  devBtn2.className = 'btn';
-  devBtn2.textContent = (state.ui && state.ui.showDev) ? 'Hide Dev Tools' : 'Show Dev Tools';
-  devBtn2.onclick = () => { toggleDevPanel(); hideOptionsMenu(); };
-  pop.appendChild(devBtn2);
-
-  right.appendChild(pop);
-  nav.appendChild(right);
+    ]),
+    currencyCode: state.currency || 'USD',
+    currencies: [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']],
+    onSetCurrency: (code) => setCurrency(code),
+    onGoHome: () => { try { window.location.href = '../index.html'; } catch {} },
+  });
+  // Render center nav back in its original place
+  renderCenterNavUI({ state, currentView, navItems: NAV, onSetView: (key) => setView(key) });
+  // Recalculate sticky offsets after nav and topbar updates
+  scheduleStickyMeasure();
 }
 
 function toggleOptionsMenu() {
@@ -833,33 +590,7 @@ function hideOptionsMenu() {
   if (pop) pop.classList.remove('open');
 }
 
-function renderNav() {
-  const nav = document.getElementById('nav');
-  nav.innerHTML = '';
-  for (const item of NAV) {
-    const btn = document.createElement('button');
-    btn.className = item.key === currentView ? 'active' : '';
-    btn.setAttribute('aria-label', item.label);
-    btn.onclick = () => setView(item.key);
-    btn.innerHTML = getIconSVG(item.icon) + `<span class="label">${item.label}</span>`;
-    nav.appendChild(btn);
-  }
-  // Right-side actions
-  const flexSpacer = document.createElement('div');
-  flexSpacer.style.flex = '1';
-  nav.appendChild(flexSpacer);
-
-  const resetBtn = document.createElement('button');
-  resetBtn.innerHTML = getIconSVG('refresh') + '<span class="label">New Game</span>';
-  resetBtn.onclick = () => { if (confirm('Start a new game?')) resetState(); };
-  nav.appendChild(resetBtn);
-
-  const devBtn = document.createElement('button');
-  devBtn.className = 'dev-chip';
-  devBtn.innerHTML = getIconSVG('wrench') + '<span class="label">Dev</span>';
-  devBtn.onclick = toggleDevPanel;
-  nav.appendChild(devBtn);
-}
+// (Removed duplicate renderNav definition)
 
 function isCarOpen(id) { return !!(state.ui && state.ui.openCars && state.ui.openCars[id]); }
 function toggleCarOpen(id) {
@@ -934,28 +665,7 @@ function openImagePicker(model) {
   input.click();
 }
 
-function getBodyStyle(model) {
-  const m = model.toLowerCase();
-  if (m.includes('hatch')) return 'hatch';
-  if (m.includes('4x4') || m.includes('suv') || m.includes('highland')) return 'suv';
-  if (m.includes('chaser') || m.includes('aristo') || m.includes('sedan') || m.includes('falcon')) return 'sedan';
-  if (m.includes('nsx') || m.includes('supra') || m.includes('rx-7') || m.includes('skyline') || m.includes('s2000') || m.includes('300zx') || m.includes('silvia') || m.includes('comet') || m.includes('sting') || m.includes('cobra') || m.includes('zephyr') || m.includes('veloce') || m.includes('sakura') || m.includes('arrow')) return 'coupe';
-  return 'coupe';
-}
-
-function getSilhouettePath(style) {
-  switch (style) {
-    case 'hatch':
-      return 'M70 165 L70 135 L140 110 L260 110 L280 135 L450 135 Q470 135 485 150 L525 150 L525 185 L110 185 Z M180 185 A24 24 0 1 0 180 137 A24 24 0 1 0 180 185 Z M420 185 A24 24 0 1 0 420 137 A24 24 0 1 0 420 185 Z';
-    case 'sedan':
-      return 'M60 165 L60 130 Q80 120 140 120 L190 95 L330 95 L360 120 L460 120 Q490 120 510 140 L540 140 L540 180 L110 180 Z M180 180 A24 24 0 1 0 180 132 A24 24 0 1 0 180 180 Z M430 180 A24 24 0 1 0 430 132 A24 24 0 1 0 430 180 Z';
-    case 'suv':
-      return 'M60 160 L60 120 L120 100 L260 100 L300 110 L440 110 L480 120 L520 130 L520 175 L110 175 Z M170 175 A26 26 0 1 0 170 125 A26 26 0 1 0 170 175 Z M420 175 A26 26 0 1 0 420 125 A26 26 0 1 0 420 175 Z';
-    case 'coupe':
-    default:
-      return 'M60 160 L60 120 Q70 110 110 110 L140 90 L240 90 L260 120 L430 120 Q460 120 480 140 L520 140 L520 180 L110 180 Z M170 180 A24 24 0 1 0 170 132 A24 24 0 1 0 170 180 Z M430 180 A24 24 0 1 0 430 132 A24 24 0 1 0 430 180 Z';
-  }
-}
+// getBodyStyle and getSilhouettePath provided by ui.js
 
 function renderMarketCondition(avg, level) {
   const L = Math.max(1, level || 1);
@@ -975,41 +685,7 @@ function renderMarketCondition(avg, level) {
   return el('span', { class: `tag ${cls}`, text: `Est ${low}–${high}%` });
 }
 
-function getIconSVG(name) {
-  const wrap = (e) => `<span class="icon" aria-hidden="true">${e}</span>`;
-  switch (name) {
-    case 'home': return wrap('🏠');
-    case 'cart': return wrap('🛒');
-    case 'garage': return wrap('🚗');
-    case 'wrench': return wrap('🔧');
-    case 'flag': return wrap('🏁');
-    case 'calendar': return wrap('📅');
-    case 'refresh': return wrap('🔄');
-    case 'cog': return wrap('⚙️');
-    default: return wrap('•');
-  }
-}
-
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') {
-      e.className = v;
-    } else if (k === 'text') {
-      e.textContent = v;
-    } else if (k.startsWith('on')) {
-      e[k] = v;
-    } else if (typeof v === 'boolean') {
-      // Properly handle boolean attributes like `disabled`
-      if (v) e.setAttribute(k, '');
-      // if false, do not set the attribute at all
-    } else {
-      e.setAttribute(k, v);
-    }
-  }
-  for (const c of children) e.appendChild(c);
-  return e;
-}
+// getIconSVG and el moved to ui.js
 
 function renderLog(container) {
   container.innerHTML = '';
@@ -1167,110 +843,12 @@ function renderMarket() {
 function refreshMarketAndRender() { refreshIllegalMarket(); render(); saveState(); }
 
 // --- Mini chart renderer ---
-function drawSparkline(canvas, points, color = '#57b6ff') {
-  if (!points || points.length < 2) return;
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = canvas.clientWidth || 320;
-  const cssH = canvas.clientHeight || 80;
-  canvas.width = Math.max(1, Math.floor(cssW * dpr));
-  canvas.height = Math.max(1, Math.floor(cssH * dpr));
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  const w = cssW, h = cssH;
-  ctx.clearRect(0, 0, w, h);
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const pad = 6;
-  const n = points.length;
-  const xFor = (i) => pad + (w - 2*pad) * (i / (n - 1));
-  const yFor = (v) => {
-    if (max === min) return h/2;
-    const t = (v - min) / (max - min);
-    return h - pad - (h - 2*pad) * t;
-  };
-  // background grid line
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, yFor(points[0]));
-  ctx.lineTo(w, yFor(points[0]));
-  ctx.stroke();
-  // line
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(xFor(0), yFor(points[0]));
-  for (let i = 1; i < n; i++) ctx.lineTo(xFor(i), yFor(points[i]));
-  ctx.stroke();
-  // gradient fill
-  const grad = ctx.createLinearGradient(0, pad, 0, h - pad);
-  grad.addColorStop(0, 'rgba(87,182,255,0.25)');
-  grad.addColorStop(1, 'rgba(87,182,255,0.02)');
-  ctx.fillStyle = grad;
-  ctx.lineTo(xFor(n-1), h - pad);
-  ctx.lineTo(xFor(0), h - pad);
-  ctx.closePath();
-  ctx.fill();
-}
+// drawSparkline moved to ui.js
 
 // --- In-place UI updates (no layout bounce) ---
-function updateMarketPricesAndTrends() {
-  for (const car of state.illegalMarket) {
-    const priceEl = document.querySelector(`[data-car-price="${car.id}"]`);
-    if (priceEl) priceEl.textContent = fmt.format(car.price);
-    const tpriceEl = document.querySelector(`[data-car-tprice="${car.id}"]`);
-    if (tpriceEl) tpriceEl.textContent = fmt.format(car.price);
-    const canvas = document.querySelector(`canvas[data-car-spark="${car.id}"]`);
-    if (canvas) drawSparkline(canvas, car.priceHistory || [car.price], '#57b6ff');
-  }
-  // Owned cars trends
-  for (const car of state.garage) {
-    const tpriceEl = document.querySelector(`[data-own-tprice="${car.id}"]`);
-    if (tpriceEl) tpriceEl.textContent = fmt.format(car.valuation ?? 0);
-    const canvas = document.querySelector(`canvas[data-own-spark="${car.id}"]`);
-    if (canvas) {
-      const pts = (car.valuationHistory && car.valuationHistory.length) ? car.valuationHistory : [(car.valuation ?? 0)];
-      drawSparkline(canvas, pts, '#7ee787');
-    }
-    const plEl = document.querySelector(`[data-own-pl="${car.id}"]`);
-    if (plEl) {
-      const profit = (car.valuation ?? 0) - (car.boughtPrice ?? 0);
-      plEl.textContent = `${profit >= 0 ? '+' : ''}${fmt.format(profit)}`;
-      plEl.className = 'tag ' + (profit >= 0 ? 'ok' : 'bad');
-    }
-  }
-  // All models trends
-  ensureModelTrends();
-  for (const m of MODELS) {
-    const mid = modelId(m.model);
-    const points = state.modelTrends[m.model] || [m.basePrice];
-    const curVal = points[points.length - 1] || m.basePrice;
-    const pEl = document.querySelector(`[data-model-price="${mid}"]`);
-    if (pEl) pEl.textContent = fmt.format(curVal);
-    const c = document.querySelector(`canvas[data-model-spark="${mid}"]`);
-    if (c) drawSparkline(c, points, '#9aa4ff');
-  }
-}
+function updateMarketPricesAndTrends() { updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId }); }
 
-function updatePartsPricesUI() {
-  // Parts view table cells
-  for (const p of PARTS) {
-    const l = document.querySelector(`[data-part-legal="${p.key}"]`);
-    if (l) l.textContent = fmt.format(state.partsPrices.legal[p.key]);
-    const i = document.querySelector(`[data-part-illegal="${p.key}"]`);
-    if (i) i.textContent = fmt.format(state.partsPrices.illegal[p.key]);
-  }
-  // Garage repair buttons (only visible for broken parts)
-  document.querySelectorAll('[data-gprice][data-part]').forEach(btn => {
-    const kind = btn.getAttribute('data-gprice');
-    const partKey = btn.getAttribute('data-part');
-    const price = state.partsPrices[kind]?.[partKey];
-    if (typeof price === 'number') {
-      const label = kind === 'legal' ? 'Legal ' : 'Illegal ';
-      btn.textContent = label + fmt.format(price);
-    }
-  });
-}
+function updatePartsPricesUI() { updatePartsPricesUI_M({ state, PARTS, fmt }); }
 
 function renderGarage() {
   const view = document.getElementById('view');
@@ -1341,26 +919,28 @@ function renderCarBreakdown(car, idx) {
   let imgSrc = state.assets && state.assets.modelImages && state.assets.modelImages[car.model];
   const slug = modelId(car.model);
   const styleSlug = '_' + getBodyStyle(car.model);
+  // Prefer known bundled silhouettes first to avoid noisy 404s
   const candidates = [
-    imgSrc, // uploaded
-    `assets/cars/${slug}.svg`,
-    `Assets/Cars/${slug}.svg`,
-    `assets/cars/${styleSlug}.svg`,
+    imgSrc, // uploaded per-model image if any
     `Assets/Cars/${styleSlug}.svg`,
+    `assets/cars/${styleSlug}.svg`,
+    `Assets/Cars/${slug}.svg`,
+    `assets/cars/${slug}.svg`,
   ].filter(Boolean);
   if (candidates.length) {
     const img = document.createElement('img');
-    img.src = candidates[0];
+    // pick first candidate not known to fail
+    let i = 0;
+    while (i < candidates.length && failedImgCache.has(candidates[i])) i += 1;
+    img.src = candidates[i] || candidates[0];
     img.alt = car.model;
     img.className = 'car-photo';
-    let i = 0;
     img.onerror = () => {
-      i += 1;
-      if (i < candidates.length) {
-        img.src = candidates[i];
-      } else if (img && img.parentNode) {
-        img.parentNode.removeChild(img);
-      }
+      failedImgCache.add(img.src);
+      // advance to next non-failed candidate
+      do { i += 1; } while (i < candidates.length && failedImgCache.has(candidates[i]));
+      if (i < candidates.length) img.src = candidates[i];
+      else if (img && img.parentNode) img.parentNode.removeChild(img);
     };
     box.appendChild(img);
   }
@@ -1396,7 +976,7 @@ function renderCarBreakdown(car, idx) {
     const row = el('div', { class: 'row part' }, [
       el('span', { text: label }),
       el('div', { class: 'spacer' }),
-      (() => { const t = el('span', { class: 'part-toggle', text: open ? '▾' : '▸' }); t.onclick = () => togglePartActions(carId, key, t); return t; })(),
+      (() => { const t = el('span', { class: 'part-toggle' + (open ? ' active' : ''), title: 'Repair', text: '🔧' }); t.onclick = () => togglePartActions(carId, key, t); return t; })(),
       el('span', { class: `pct-badge ${badgeCls(cond)}`, text: `${cond}%` }),
     ]);
     container.appendChild(row);
@@ -1440,18 +1020,7 @@ function renderCarBreakdown(car, idx) {
   return box;
 }
 
-function layoutCarBreakdown(container) {
-  try {
-    const rect = container.getBoundingClientRect();
-    let maxBottom = rect.top + 320;
-    container.querySelectorAll('.callout').forEach(el => {
-      const r = el.getBoundingClientRect();
-      if (r.bottom > maxBottom) maxBottom = r.bottom;
-    });
-    const needed = Math.ceil(maxBottom - rect.top) + 12;
-    container.style.height = needed + 'px';
-  } catch {}
-}
+// layoutCarBreakdown provided by ui.js
 
 // Part actions toggle state
 function ensureUIMaps() {
@@ -1468,7 +1037,7 @@ function togglePartActions(carId, key, toggleEl) {
   const m = state.ui.openPartActions[carId] || (state.ui.openPartActions[carId] = {});
   m[key] = !m[key];
   // Update arrow
-  if (toggleEl) toggleEl.textContent = m[key] ? '▾' : '▸';
+  if (toggleEl) toggleEl.classList.toggle('active', m[key]);
   // Show/hide actions block without full re-render
   const actions = document.querySelector(`.part-actions[data-actions-for="${carId}:${key}"]`);
   if (actions) {
@@ -1543,17 +1112,38 @@ function renderRaces() {
 
 function render() {
   renderNav();
-  renderNavHub();
+  // Old secondary nav hub removed; using topnav only
   updateMoney();
   // Wire top-right options cog opens modal
   const optionsCog = document.getElementById('optionsCog');
   if (optionsCog) optionsCog.onclick = () => showOptionsModal();
   const view = document.getElementById('view');
   if (!view) return;
-  if (currentView === 'market') renderMarket();
-  else if (currentView === 'garage') renderGarage();
-  else if (currentView === 'parts') renderParts();
-  else if (currentView === 'races') renderRaces();
+  if (currentView === 'market') {
+    if (!state.illegalMarket.length) { refreshIllegalMarket(); saveState(); }
+    renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar: (idx) => buyCar(idx) });
+  } else if (currentView === 'garage') {
+    renderGarageFullView({
+      state, PARTS, fmt, modelId,
+      avgCondition,
+      conditionStatus,
+      isCarOpen,
+      onToggleCarOpen: (id) => toggleCarOpen(id),
+      isSellConfirm,
+      onSellClickById: (id, btn) => onSellClickById(id, btn),
+      onRaceCar: (idx) => raceCar(idx),
+      onOpenImagePicker: (m) => openImagePicker(m),
+      onRepairCar: (idx, key, source) => repairCar(idx, key, source),
+      garageCapacity,
+      nextGarageCost,
+      onBuyGarageSlot: () => buyGarageSlot(),
+      saveState: () => saveState(),
+    });
+  } else if (currentView === 'races') {
+    renderRacesView({ state, PARTS, avgCondition, conditionStatus, canRace, onRaceCar: (idx) => raceCar(idx) });
+  } else if (currentView === 'casino') {
+    renderCasino();
+  }
   // options now displayed as a modal, not a separate view
   ensureToasts();
   // relayout breakdowns on each render
@@ -1562,6 +1152,376 @@ function render() {
   });
 }
 
+// --- Casino: Slots (Vegas 3x3, multi-line) ---
+const SLOTS_SYMBOLS = [
+  { s: '🍒', w: 8, p3: 5, p2: 1.5 },
+  { s: '🍋', w: 8, p3: 4, p2: 1.4 },
+  { s: '🔔', w: 5, p3: 8, p2: 2.0 },
+  { s: '⭐️', w: 4, p3: 12, p2: 3.0 },
+  { s: '💎', w: 3, p3: 20, p2: 4.0 },
+  { s: '7️⃣', w: 1, p3: 40, p2: 6.0 },
+  // Wild substitutes on paylines; 3+ wilds anywhere award free spins
+  { s: '🃏', w: 2, p3: 25, p2: 5.0, wild: true },
+];
+const SLOTS_WEIGHTS = (() => { const arr=[]; SLOTS_SYMBOLS.forEach(sym => { for(let i=0;i<sym.w;i++) arr.push(sym); }); return arr; })();
+const PAYLINES = [
+  [0,0,0], // top
+  [1,1,1], // middle
+  [2,2,2], // bottom
+  [0,1,2], // diag down
+  [2,1,0], // diag up
+  [0,1,0], // V top
+  [2,1,2], // V bottom
+];
+function slotsPick() { return SLOTS_WEIGHTS[randi(0, SLOTS_WEIGHTS.length)].s; }
+function slotsGrid() { const g = []; for(let r=0;r<3;r++){ g[r]=[]; for(let c=0;c<3;c++){ g[r][c]=slotsPick(); } } return g; }
+const isWild = (s) => s === '🃏';
+function linePayout(grid, line, betPerLine) {
+  const a = grid[line[0]][0], b = grid[line[1]][1], c = grid[line[2]][2];
+  // Determine triple with wild substitution
+  // Target symbol is the first non-wild encountered; if none, wild itself
+  const firstNonWild = !isWild(a) ? a : (!isWild(b) ? b : (!isWild(c) ? c : '🃏'));
+  const aMatch = isWild(a) || a === firstNonWild;
+  const bMatch = isWild(b) || b === firstNonWild;
+  const cMatch = isWild(c) || c === firstNonWild;
+  if (aMatch && bMatch && cMatch) {
+    const sym = SLOTS_SYMBOLS.find(x=>x.s===firstNonWild);
+    return Math.round(betPerLine * (sym ? sym.p3 : 5));
+  }
+  // Pair pays on first two columns only (left-to-right), with wild substitution
+  const firstTwoNonWild = !isWild(a) ? a : (!isWild(b) ? b : '🃏');
+  const a2 = isWild(a) || a === firstTwoNonWild;
+  const b2 = isWild(b) || b === firstTwoNonWild;
+  if (a2 && b2) {
+    const sym = SLOTS_SYMBOLS.find(x=>x.s===firstTwoNonWild);
+    return Math.round(betPerLine * (sym ? sym.p2 : 1.5));
+  }
+  return 0;
+}
+function ensureCasinoUI() {
+  if (!state.ui || typeof state.ui !== 'object') state.ui = {};
+  if (!state.ui.casino || typeof state.ui.casino !== 'object') {
+    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0 };
+  }
+  const ui = state.ui.casino;
+  if (!Array.isArray(ui.grid)) ui.grid = slotsGrid();
+  for (let r=0;r<3;r++) {
+    if (!Array.isArray(ui.grid[r])) ui.grid[r] = [];
+    for (let c=0;c<3;c++) if (typeof ui.grid[r][c] !== 'string') ui.grid[r][c] = slotsPick();
+  }
+  if (typeof ui.betPerLine !== 'number' || !isFinite(ui.betPerLine)) ui.betPerLine = 100;
+  if (typeof ui.lines !== 'number' || !isFinite(ui.lines)) ui.lines = 5;
+  ui.lines = Math.max(1, Math.min(7, ui.lines));
+  if (typeof ui.freeSpins !== 'number' || !isFinite(ui.freeSpins)) ui.freeSpins = 0;
+  // If page re-rendered mid-spin previously, ensure it is reset
+  if (ui.spinning !== false) ui.spinning = false;
+}
+
+function renderCasino() {
+  const view = document.getElementById('view');
+  view.innerHTML = '';
+  try {
+    ensureCasinoUI();
+    const ui = state.ui.casino;
+  const panel = el('div', { class: 'panel' }, [ el('div', { class: 'row' }, [ el('h3', { text: 'Casino — Slots' }), el('div', { class: 'spacer' }), el('span', { class: 'tag info', text: `${ui.lines} lines` }) ]) ]);
+  const cont = document.createElement('div'); cont.className = 'slots'; panel.appendChild(cont);
+  const layout = document.createElement('div'); layout.className = 'slots-layout'; cont.appendChild(layout);
+
+  // Left column: timeline of past spins
+  const leftCol = document.createElement('div'); leftCol.className = 'side'; layout.appendChild(leftCol);
+  const timeline = document.createElement('div'); timeline.className = 'panelish timeline'; leftCol.appendChild(timeline);
+  timeline.appendChild(el('div', { class: 'subtle', text: 'Timeline' }));
+  const tlItems = document.createElement('div'); tlItems.className = 'items'; timeline.appendChild(tlItems);
+
+  // Center: machine
+  const machine = document.createElement('div'); layout.appendChild(machine);
+  const marquee = document.createElement('div'); marquee.className = 'marquee'; marquee.textContent = 'Vegas 3×3'; machine.appendChild(marquee);
+  if ((ui.freeSpins||0) > 0) {
+    const fs = document.createElement('div'); fs.className = 'subtle'; fs.textContent = `Free Spins: ${ui.freeSpins}`; machine.appendChild(fs);
+  }
+  const cab = document.createElement('div'); cab.className = 'cabinet'; machine.appendChild(cab);
+  const stage = document.createElement('div'); stage.className = 'stage'; cab.appendChild(stage);
+  const reelsWrap = document.createElement('div'); reelsWrap.className = 'reels'; stage.appendChild(reelsWrap);
+    const cellEls = [];
+    for (let r=0;r<3;r++) {
+      for (let c=0;c<3;c++) {
+        const d = document.createElement('div'); d.className = 'cell'; d.textContent = (ui.grid[r]&&ui.grid[r][c]) || slotsPick();
+        reelsWrap.appendChild(d); cellEls.push({el:d,r,c});
+      }
+    }
+    // Controls (options under machine)
+  const optionsBox = document.createElement('div'); optionsBox.className = 'panelish optionsbox'; machine.appendChild(optionsBox);
+  const controls = document.createElement('div'); controls.className = 'controls'; optionsBox.appendChild(controls);
+    const selBet = document.createElement('select'); [50,100,250,500,1000].forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent=fmt.format(v); if(ui.betPerLine===v)o.selected=true; selBet.appendChild(o); });
+    selBet.onchange = ()=>{ ui.betPerLine = parseInt(selBet.value,10)||100; updateTotal(); saveState(); };
+    const selLines = document.createElement('select'); [1,3,5,7].forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent=`${v} lines`; if(ui.lines===v)o.selected=true; selLines.appendChild(o); });
+    selLines.onchange = ()=>{ ui.lines = parseInt(selLines.value,10)||3; updateTotal(); saveState(); };
+    const total = document.createElement('span'); total.className='total';
+    function updateTotal(){ total.textContent = `Total Bet: ${fmt.format(ui.betPerLine*ui.lines)}`; }
+    updateTotal();
+    const spinBtn = el('button', { class: 'btn good', text: 'Spin 🎰' });
+  spinBtn.onclick = ()=> spinSlotsMulti(cellEls, spinBtn, stage);
+    controls.appendChild(selBet); controls.appendChild(selLines); controls.appendChild(total);
+    const spinBox = document.createElement('div'); spinBox.className = 'panelish spinbox'; machine.appendChild(spinBox);
+    spinBox.appendChild(spinBtn);
+    // Result
+  const res = document.createElement('div'); res.className = 'result'; res.textContent = ui.lastWin ? `Won ${fmt.format(ui.lastWin)} last spin` : '—'; machine.appendChild(res);
+
+  // Right column: Total winnings first, then rules, then paytable
+  const colRight = document.createElement('div'); colRight.className = 'side'; layout.appendChild(colRight);
+  const profitBox = document.createElement('div'); profitBox.className = 'panelish profit'; colRight.appendChild(profitBox);
+  const profitLabel = document.createElement('div'); profitLabel.className='subtle'; profitLabel.textContent='Total Winnings'; profitBox.appendChild(profitLabel);
+  const profitValue = document.createElement('div'); profitValue.className='result'; profitBox.appendChild(profitValue);
+  const rulesBox = document.createElement('div'); rulesBox.className = 'panelish rules'; colRight.appendChild(rulesBox);
+  const rulesInner = document.createElement('div'); rulesInner.className = 'inner'; rulesBox.appendChild(rulesInner);
+  rulesInner.appendChild(el('div', { class: 'subtle', text: 'Rules' }));
+  const rulesList = document.createElement('ul'); rulesInner.appendChild(rulesList);
+  ;['Pays left-to-right on active lines','Three in a row pays most','Pairs pay on first two symbols only','🃏 is Wild and substitutes on lines','3+ 🃏 anywhere award 5 Free Spins','Choose lines (1/3/5/7) and bet per line','Gambling carries risk — play responsibly'].forEach(t=>{ const li=document.createElement('li'); li.textContent=t; rulesList.appendChild(li); });
+  // Left timeline was not created earlier, create now if missing
+  const colLeft = layout.firstChild; // slots .side timeline container
+  if (colLeft && colLeft.classList && colLeft.classList.contains('side')) {
+    const tl = colLeft.querySelector('.timeline .items');
+    if (tl) { tl.innerHTML = ''; }
+  }
+  // Paytable under rules
+  const pay = document.createElement('div'); pay.className='panelish paytable'; colRight.appendChild(pay);
+  SLOTS_SYMBOLS.slice().reverse().forEach(sym=>{
+    pay.appendChild(el('div',{text:sym.s}));
+    pay.appendChild(el('div',{text:`3× ${sym.p3}x`}));
+    pay.appendChild(el('div',{text:`2× ${sym.p2}x`}));
+  });
+  view.appendChild(panel);
+  // draw initial payline guides
+  requestAnimationFrame(()=> {
+    drawSlotsLines(stage, cellEls, ui.lines, []);
+    renderTimeline();
+    renderProfit();
+    syncTimelineHeight();
+  });
+  } catch (e) {
+    const err = document.createElement('div'); err.className='panel'; err.textContent = 'Casino failed to render: ' + (e && e.message ? e.message : String(e));
+    view.appendChild(err);
+  }
+}
+function spinSlotsMulti(cellEls, spinBtn, stage){
+  ensureCasinoUI();
+  const ui = state.ui.casino;
+  if (ui.spinning) return;
+  const bet = Math.max(10, ui.betPerLine) * Math.max(1, Math.min(7, ui.lines));
+  const isFree = (ui.freeSpins||0) > 0;
+  const actualStake = isFree ? 0 : bet;
+  if (!isFree && state.money < bet) { showToast('Not enough cash for this bet.', 'warn'); return; }
+  ui.spinning = true; spinBtn.disabled=true;
+  if (isFree) { ui.freeSpins = Math.max(0, (ui.freeSpins||0) - 1); saveState(); }
+  if (actualStake > 0) addMoney(-actualStake, 'Slots spin');
+  // clear win highlights
+  document.querySelectorAll('.slots .cell.win').forEach(e=>e.classList.remove('win'));
+  // spin animation (randomize then settle)
+  // Preview active lines briefly, then spin
+  drawSlotsLines(stage, cellEls, ui.lines, 'preview');
+  const previewMs = 350;
+  setTimeout(()=>{
+    clearSlotsLines(stage);
+    // Fallback with column intervals to ensure visible updates across browsers
+    const durations = [900, 1050, 1200];
+    const delays = [0, 140, 280];
+    let running = 0;
+    const timers = [];
+    // mark spinning and start intervals per column
+    [0,1,2].forEach(col => {
+      const colCells = cellEls.filter(c => c.c === col);
+      colCells.forEach(c => c.el.classList.add('spin'));
+      running++;
+      const startCol = Date.now() + delays[col];
+      const endAt = startCol + durations[col];
+      const t = setInterval(()=>{
+        const now = Date.now();
+        if (now < startCol) return; // wait column delay
+        // update visible symbols for this column
+        colCells.forEach(c => { c.el.textContent = slotsPick(); });
+        if (now >= endAt) {
+          clearInterval(t);
+          timers[col] = null;
+          running--;
+          if (running === 0) finish();
+        }
+      }, 80);
+      timers[col] = t;
+    });
+    // Safety fallback: ensure finish is called even if a timer was throttled
+    setTimeout(()=>{ if (running > 0) { timers.forEach(x=> x && clearInterval(x)); finish(); } }, Math.max(...durations) + Math.max(...delays) + 200);
+  }, previewMs);
+  function finish(){
+    const grid = slotsGrid(); ui.grid = grid;
+    cellEls.forEach(c=>{ c.el.classList.remove('spin'); c.el.textContent = grid[c.r][c.c]; });
+    // evaluate lines
+    const linesToEval = PAYLINES.slice(0, Math.max(1, Math.min(PAYLINES.length, ui.lines)));
+    let totalWin = 0; const winners=[];
+    linesToEval.forEach((ln, li)=>{
+      const w = linePayout(grid, ln, ui.betPerLine);
+      if (w>0) { totalWin += w; winners.push({ln}); }
+    });
+    // highlight winners
+    winners.forEach(w=>{ const ln = w.ln; for(let c=0;c<3;c++){ const r=ln[c]; const cell = cellEls.find(x=>x.r===r && x.c===c); if(cell) cell.el.classList.add('win'); } });
+    // draw lines, highlighting winners
+    const winnerIdx = winners.map(w=> PAYLINES.findIndex(pl=> pl.length===w.ln.length && pl.every((v,i)=>v===w.ln[i]))).filter(i=>i>=0);
+    drawSlotsLines(stage, cellEls, ui.lines, winnerIdx);
+    ui.lastWin = totalWin;
+    if (totalWin>0) { addMoney(totalWin, 'Slots win'); addXP(Math.min(25, Math.round(totalWin/400)), 'Slots'); }
+    else addXP(2, 'Slots');
+    // Award free spins if 3+ wilds anywhere on the grid
+    try {
+      const flat = grid.flat();
+      const wilds = flat.filter(s => s === '🃏').length;
+      if (wilds >= 3) {
+        ui.freeSpins = (ui.freeSpins||0) + 5;
+        showToast('Free Spins +5 (🃏)', 'good');
+      }
+    } catch {}
+    // Update recent list with descriptive entry
+    if (!Array.isArray(ui.recent)) ui.recent = [];
+    const desc = buildWinnersDescription(winners);
+    ui.recent.push({ net: totalWin - actualStake, total: actualStake, win: totalWin, desc, free: isFree });
+    if (ui.recent.length > 100) ui.recent.shift();
+    saveState(); ui.spinning=false; spinBtn.disabled=false;
+    const res = document.querySelector('.slots .result'); if (res) res.textContent = totalWin ? `${isFree?'Free Spin — ':''}Won ${fmt.format(totalWin)}!` : (isFree ? 'Free Spin — no win' : 'No win — try again');
+    renderTimeline();
+    renderProfit();
+    syncTimelineHeight();
+  }
+
+  function renderRecent(){ renderTimeline(); syncTimelineHeight(); }
+}
+
+function buildWinnersDescription(winners){
+  if (!winners || !winners.length) return 'No winning lines';
+  const names = ['Top','Middle','Bottom','Diag ↓','Diag ↑','V-Top','V-Bot'];
+  return winners.map(w => {
+    const idx = PAYLINES.findIndex(pl=> pl.length===w.ln.length && pl.every((v,i)=>v===w.ln[i]));
+    const name = idx>=0 ? names[idx] : 'Line';
+    const ln = w.ln;
+    const a = state.ui.casino.grid[ln[0]][0], b = state.ui.casino.grid[ln[1]][1], c = state.ui.casino.grid[ln[2]][2];
+    const firstNonWild = !isWild(a) ? a : (!isWild(b) ? b : (!isWild(c) ? c : '🃏'));
+    const triple = (isWild(a)||a===firstNonWild) && (isWild(b)||b===firstNonWild) && (isWild(c)||c===firstNonWild);
+    const pair = (isWild(a)||a===(!isWild(a)?a:(!isWild(b)?b:'🃏'))) && (isWild(b)||b===(!isWild(a)?a:(!isWild(b)?b:'🃏')));
+    const count = triple ? 3 : 2;
+    const sym = firstNonWild;
+    return `${name}: ${count}× ${sym}`;
+  }).join(', ');
+}
+
+// Render the left-side timeline of recent slot results
+function renderTimeline() {
+  try {
+    ensureCasinoUI();
+    const ui = state.ui.casino;
+    const list = document.querySelector('.slots .timeline .items');
+    if (!list) return;
+    list.innerHTML = '';
+    const items = (ui.recent || []).slice().reverse();
+    items.forEach(it => {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const net = document.createElement('div');
+      net.className = 'net ' + (it.net >= 0 ? 'gain' : 'loss');
+      net.textContent = (it.net >= 0 ? '+' : '') + fmt.format(it.net);
+      const desc = document.createElement('div');
+      desc.className = 'desc';
+      desc.textContent = it.desc || (it.net > 0 ? 'Win' : 'No win');
+      row.appendChild(net);
+      row.appendChild(desc);
+      list.appendChild(row);
+    });
+  } catch {}
+}
+
+// Render the aggregate profit/loss on the right side
+function renderProfit() {
+  try {
+    ensureCasinoUI();
+    const ui = state.ui.casino;
+    const pv = document.querySelector('.slots .profit .result');
+    if (!pv) return;
+    const sum = (ui.recent || []).reduce((a, b) => a + (b.net || 0), 0);
+    pv.textContent = (sum >= 0 ? '+' : '') + fmt.format(sum);
+    pv.classList.remove('gain','loss');
+    if (sum > 0) pv.classList.add('gain');
+    else if (sum < 0) pv.classList.add('loss');
+  } catch {}
+}
+
+// Keep the left timeline max-height aligned to the height of the right panels
+function syncTimelineHeight() {
+  try {
+    const items = document.querySelector('.slots .timeline .items');
+    if (!items) return;
+    items.style.maxHeight = '25rem';
+  } catch {}
+}
+
+function drawSlotsLines(stage, cellEls, linesCount, winnerIdx){
+  try {
+    // Remove any existing overlay
+    const old = stage.querySelector('.lines'); if (old) old.remove();
+    // If preview requested, draw all enabled lines in base style
+    if (winnerIdx === 'preview') {
+      const overlay = document.createElement('div'); overlay.className = 'lines';
+      const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); overlay.appendChild(svg);
+      stage.appendChild(overlay);
+      const rectStage = stage.getBoundingClientRect();
+      const enabled = PAYLINES.slice(0, Math.max(1, Math.min(PAYLINES.length, linesCount)));
+      enabled.forEach((ln)=>{
+        const pts = [];
+        for(let c=0;c<3;c++){
+          const r = ln[c];
+          const cell = cellEls.find(x=> x.r===r && x.c===c);
+          if (!cell) return;
+          const rc = cell.el.getBoundingClientRect();
+          const x = rc.left - rectStage.left + rc.width/2;
+          const y = rc.top - rectStage.top + rc.height/2;
+          pts.push(`${x},${y}`);
+        }
+        if (pts.length===3){
+          const pl = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+          pl.setAttribute('points', pts.join(' '));
+          svg.appendChild(pl);
+        }
+      });
+      return;
+    }
+    // Only draw when we actually have winners
+    if (!Array.isArray(winnerIdx) || winnerIdx.length === 0) return;
+    const overlay = document.createElement('div'); overlay.className = 'lines';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); overlay.appendChild(svg);
+    stage.appendChild(overlay);
+    const rectStage = stage.getBoundingClientRect();
+    const enabled = PAYLINES.slice(0, Math.max(1, Math.min(PAYLINES.length, linesCount)));
+    winnerIdx.forEach((idx)=>{
+      const ln = enabled[idx];
+      if (!ln) return;
+      const pts = [];
+      for(let c=0;c<3;c++){
+        const r = ln[c];
+        const cell = cellEls.find(x=> x.r===r && x.c===c);
+        if (!cell) return;
+        const rc = cell.el.getBoundingClientRect();
+        const x = rc.left - rectStage.left + rc.width/2;
+        const y = rc.top - rectStage.top + rc.height/2;
+        pts.push(`${x},${y}`);
+      }
+      if (pts.length===3){
+        const pl = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+        pl.setAttribute('points', pts.join(' '));
+        pl.setAttribute('class','win');
+        svg.appendChild(pl);
+      }
+    });
+  } catch {}
+}
+
+function clearSlotsLines(stage){ const old = stage && stage.querySelector && stage.querySelector('.lines'); if (old) old.remove(); }
+
+// Quick-access nav hub below the top nav
 function renderNavHub() {
   const hub = document.getElementById('navHub');
   if (!hub) return;
@@ -1579,52 +1539,9 @@ function renderNavHub() {
   hub.appendChild(wrap);
 }
 
-function showOptionsModal() {
-  hideOptionsModal();
-  const modal = document.createElement('div');
-  modal.className = 'options-modal open';
-  modal.id = 'optionsModal';
-  const backdrop = document.createElement('div');
-  backdrop.className = 'options-backdrop';
-  backdrop.onclick = hideOptionsModal;
-  const panel = document.createElement('div');
-  panel.className = 'options-panel options-wrap';
-  panel.appendChild(el('h3', { text: 'Options' }));
-  // Currency field
-  const field = document.createElement('div');
-  field.className = 'options-field';
-  field.appendChild(el('strong', { text: 'Currency:' }));
-  const sel = document.createElement('select');
-  const opts = [ ['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty'] ];
-  opts.forEach(([code, name]) => {
-    const o = document.createElement('option');
-    o.value = code; o.textContent = `${code} — ${name}`; if ((state.currency||'USD') === code) o.selected = true; sel.appendChild(o);
-  });
-  sel.onchange = () => setCurrency(sel.value);
-  field.appendChild(sel);
-  panel.appendChild(field);
-  // Actions
-  const actions = document.createElement('div');
-  actions.className = 'actions';
-  const devBtn = el('button', { class: 'btn', text: (state.ui && state.ui.showDev) ? 'Hide Dev Tools' : 'Show Dev Tools' });
-  devBtn.onclick = () => { toggleDevPanel(); };
-  const newBtn = el('button', { class: 'btn warn', text: 'New Game' });
-  newBtn.onclick = () => showToast('Start a new game?', 'info', [ { label: 'Cancel', action: () => {} }, { label: 'Confirm', action: () => resetState() } ]);
-  const clearBtn = el('button', { class: 'btn danger', text: 'Clear Save' });
-  clearBtn.onclick = () => { try { localStorage.removeItem('ics_state'); showToast('Save cleared. Starting new game…', 'info'); } catch {} resetState(); };
-  actions.appendChild(devBtn); actions.appendChild(newBtn); actions.appendChild(clearBtn);
-  panel.appendChild(actions);
-  modal.appendChild(backdrop);
-  modal.appendChild(panel);
-  document.body.appendChild(modal);
-  // Close on ESC
-  window.addEventListener('keydown', optionsEscOnce, { once: true });
-}
-function hideOptionsModal() {
-  const modal = document.getElementById('optionsModal');
-  if (modal) modal.remove();
-}
-function optionsEscOnce(e) { if (e.key === 'Escape') hideOptionsModal(); }
+// renderNavHub kept inline; can be moved later if needed
+
+// Options modal kept inline; can be moved later if needed
 
 function setCurrency(code) {
   const old = state.currency || 'USD';
@@ -1691,50 +1608,14 @@ startIllegalTicker();
 startIllegalListingRefresher();
 renderDevPanel();
 ensureToasts();
+// Initial sticky positioning and keep it in sync on resize
+updateStickyOffsets();
+window.addEventListener('resize', scheduleStickyMeasure);
+// Start progress bar and hide loader after first render settles
+startLoaderProgress();
+setTimeout(hideLoader, 450);
 
-// --- Toasts (notifications) ---
-function ensureToasts() {
-  if (!document.getElementById('toasts')) {
-    const t = document.createElement('div');
-    t.id = 'toasts';
-    t.className = 'toasts';
-    document.body.appendChild(t);
-  }
-}
-function showToast(message, type = 'info', actions = null, timeoutMs = 4200) {
-  ensureToasts();
-  const cont = document.getElementById('toasts');
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  const text = document.createElement('div');
-  text.textContent = message;
-  toast.appendChild(text);
-  if (actions && actions.length) {
-    const act = document.createElement('div');
-    act.className = 'actions';
-    actions.forEach(a => {
-      const b = document.createElement('button');
-      b.className = 'btn';
-      b.textContent = a.label;
-      b.onclick = () => {
-        try { a.action && a.action(); } finally {
-          toast.classList.add('hide');
-          setTimeout(() => toast.remove(), 240);
-        }
-      };
-      act.appendChild(b);
-    });
-    toast.appendChild(act);
-  }
-  cont.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add('show'));
-  if (!actions || !actions.length) {
-    setTimeout(() => {
-      toast.classList.add('hide');
-      setTimeout(() => toast.remove(), 240);
-    }, timeoutMs);
-  }
-}
+// Toast helpers moved to ui.js
 // --- Storage (garage capacity) ---
 function garageCapacity() { return 1 + (state.garagesPurchased || 0); }
 function nextGarageCost() {

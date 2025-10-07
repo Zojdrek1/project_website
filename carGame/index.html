@@ -5,10 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ICS - Illegal Car Sales (Prototype)</title>
     <link rel="stylesheet" href="style.css" />
+    <!-- Preload common silhouette assets to reduce layout shifts -->
+    <link rel="preload" as="image" href="Assets/Cars/_coupe.svg" />
+    <link rel="preload" as="image" href="Assets/Cars/_sedan.svg" />
+    <link rel="preload" as="image" href="Assets/Cars/_suv.svg" />
+    <link rel="preload" as="image" href="Assets/Cars/_hatch.svg" />
   </head>
   <body>
+    <div id="loader" class="loader shown" aria-live="polite" aria-busy="true">
+      <div class="loader-box">
+        <div class="label">Loading ICS…</div>
+        <div class="bar"><div class="fill" id="loaderFill"></div></div>
+      </div>
+    </div>
     <div class="topbar">
-      <div class="topbar-options"><button id="optionsCog" class="cog-btn" aria-label="Options">⚙️</button></div>
       <div class="topbar-box">
         <div class="topbar-stats">
           <div class="stat-left">
@@ -33,12 +43,13 @@
       </div>
     </div>
 
+    <div id="navTopbar"></div>
     <div class="topnav" id="nav"></div>
     <main class="content">
       <div id="navHub"></div>
       <div id="view"></div>
     </main>
 
-    <script defer src="script.js"></script>
+    <script type="module" src="script.js"></script>
   </body>
 </html>
