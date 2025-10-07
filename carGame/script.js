@@ -1381,8 +1381,7 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
   // initialize audio on user gesture and play start cue
   casinoEnsureAudio();
   if (ui.sound !== false) casinoPlayStart();
-  // start continuous spin sound
-  casinoSpinStart();
+  // per-reel ticking handled per column (see below)
   // Reset counter to 0 immediately on spin start
   setWinCounter(0, false);
   if (isFree) { ui.freeSpins = Math.max(0, (ui.freeSpins||0) - 1); saveState(); }
@@ -1407,6 +1406,7 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
     [0,1,2].forEach(col => {
       const colCells = cellEls.filter(c => c.c === col);
       colCells.forEach(c => c.el.classList.add('spin'));
+      casinoTickStart(col);
       running++;
       const startCol = Date.now() + delays[col];
       const endAt = startCol + durations[col];
@@ -1422,6 +1422,7 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
           // stop thunk and fix values immediately for this column
           colCells.forEach(c => { c.el.classList.remove('spin'); c.el.classList.add('stop'); c.el.textContent = finalGrid[c.r][c.c]; });
           casinoPlayStop(col);
+          casinoTickStop(col);
           setTimeout(()=> colCells.forEach(c => c.el.classList.remove('stop')), 240);
           if (running === 0) finish();
         }
@@ -1434,7 +1435,8 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
   function finish(){
     const grid = finalGrid; ui.grid = grid;
     cellEls.forEach(c=>{ c.el.classList.remove('spin'); c.el.textContent = grid[c.r][c.c]; });
-    casinoSpinStop();
+    // ensure all tickers are stopped
+    casinoTickStop(0); casinoTickStop(1); casinoTickStop(2);
     // evaluate lines
     const linesToEval = PAYLINES.slice(0, Math.max(1, Math.min(PAYLINES.length, ui.lines)));
     let totalWin = 0; const winners=[];
@@ -1547,7 +1549,7 @@ function renderFreeSpins() {
 }
 
 // --- Casino Audio (simple WebAudio SFX) ---
-let casinoAudio = { ctx: null, master: null, spin: null };
+let casinoAudio = { ctx: null, master: null, spin: null, tickers: {} };
 function casinoEnsureAudio(force = false) {
   try {
     ensureCasinoUI();
@@ -1568,11 +1570,39 @@ function casinoPlayTest(){ try { casinoEnsureAudio(true); tone(660,0.12,'square'
 function casinoApplyVolume(){ try { ensureCasinoUI(); if (!casinoAudio.master) return; const v = Math.max(0, Math.min(1, (state.ui.casino.volume ?? 0.5))); casinoAudio.master.gain.value = (0.05 + 0.85 * v); } catch {} }
 function casinoPlayStart() { if (!casinoReady()) return; tone(740, 0.09, 'triangle', 0.08); setTimeout(()=> tone(880, 0.08, 'triangle', 0.08), 90); }
 function casinoPlayStop(col){ if (!casinoReady()) return; const base=180; const f= base + col*40; thunk(f); }
-function casinoPlayWin(amount){ if (!casinoReady()) return; const ratio = Math.min(1.5, Math.max(0.8, amount/5000)); const seq=[880,1040,1320,1760]; seq.forEach((f,i)=> setTimeout(()=> tone(f, 0.09, 'sine', 0.035*ratio), i*90)); }
+function casinoPlayWin(amount){
+  if (!casinoReady()) return;
+  // Play 1–6 bright slot-style dings depending on win size
+  const n = Math.max(1, Math.min(6, Math.ceil(amount / 3000))); // scale lightly
+  for (let i=0;i<n;i++) setTimeout(()=> chime(1400 + i*60), i*130);
+}
+function chime(f=1400){
+  try {
+    if (!casinoAudio.ctx) return; const ctx = casinoAudio.ctx;
+    // Fundamental + overtone for a metallic bell-like ping
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value = f;
+    const o2 = ctx.createOscillator(); o2.type='triangle'; o2.frequency.value = f*2.01; // slight detune for shimmer
+    const g = ctx.createGain(); const gain = sfxGain(0.12);
+    g.gain.setValueAtTime(gain, ctx.currentTime);
+    // Rapid decay with a short tail
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+    // Subtle pitch drop for realism
+    o1.frequency.exponentialRampToValueAtTime(f*0.96, ctx.currentTime + 0.18);
+    o2.frequency.exponentialRampToValueAtTime(f*1.92, ctx.currentTime + 0.18);
+    // Gentle highpass to reduce boom
+    const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 900; hp.Q.value = 0.7;
+    o1.connect(g); o2.connect(g); g.connect(hp); hp.connect(casinoAudio.master);
+    o1.start(); o2.start();
+    const stopAt = ctx.currentTime + 0.24; o1.stop(stopAt); o2.stop(stopAt);
+  } catch {}
+}
 function casinoPlayAward(){ if (!casinoReady()) return; const seq=[660,990,1320]; seq.forEach((f,i)=> setTimeout(()=> tone(f,0.12,'square',0.04), i*120)); }
 function casinoReady(){ try { ensureCasinoUI(); return state.ui.casino.sound !== false && casinoAudio.ctx && casinoAudio.master; } catch { return false; } }
 function casinoSpinStart(){ try { casinoSpinStop(); if (!casinoReady()) return; const ctx=casinoAudio.ctx; const src=ctx.createBufferSource(); const len = Math.floor(ctx.sampleRate * 0.4); const buf = ctx.createBuffer(1, len, ctx.sampleRate); const data = buf.getChannelData(0); for(let i=0;i<len;i++){ data[i]=(Math.random()*2-1)*0.6; } src.buffer=buf; src.loop=true; const filter=ctx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.value=260; filter.Q.value=0.9; const g=ctx.createGain(); g.gain.value = sfxGain(0.10); src.connect(filter); filter.connect(g); g.connect(casinoAudio.master); src.start(); casinoAudio.spin = { src, g, filter }; } catch {} }
 function casinoSpinStop(){ try { if (casinoAudio.spin && casinoAudio.spin.src){ casinoAudio.spin.src.stop(); } casinoAudio.spin=null; } catch {} }
+function casinoPlayTick(){ if (!casinoReady()) return; tone(1800, 0.02, 'square', 0.09); }
+function casinoTickStart(col){ try { casinoTickStop(col); if (!casinoReady()) return; const base=[120,100,90][col]||110; const id = setInterval(()=> casinoPlayTick(), base); casinoAudio.tickers[col]=id; } catch {} }
+function casinoTickStop(col){ try { const id = casinoAudio.tickers && casinoAudio.tickers[col]; if (id) { clearInterval(id); casinoAudio.tickers[col]=null; } } catch {} }
 function sfxGain(x){ try { const ua = navigator.userAgent; const isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua); return isSafari ? x*2.2 : x; } catch { return x; } }
 function tone(freq, dur, type='sine', gain=0.03){ try { if (!casinoAudio.ctx) return; const ctx=casinoAudio.ctx; const osc=ctx.createOscillator(); const g=ctx.createGain(); osc.type=type; osc.frequency.value=freq; const gg=sfxGain(gain); g.gain.setValueAtTime(gg, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur); osc.connect(g); g.connect(casinoAudio.master); osc.start(); osc.stop(ctx.currentTime + dur); } catch {} }
 function thunk(freq=160){ try { if (!casinoAudio.ctx) return; const ctx=casinoAudio.ctx; const osc=ctx.createOscillator(); const g=ctx.createGain(); osc.type='sine'; osc.frequency.setValueAtTime(freq, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(freq*0.6, ctx.currentTime+0.08); const gg=sfxGain(0.05); g.gain.setValueAtTime(gg, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.12); osc.connect(g); g.connect(casinoAudio.master); osc.start(); osc.stop(ctx.currentTime+0.13); // tiny noise click
