@@ -1213,6 +1213,7 @@ function render() {
   } else if (currentView === 'casino') {
     renderCasino();
   }
+  setCasinoSession(currentView === 'casino');
   // options now displayed as a modal, not a separate view
   ensureToasts();
   // relayout breakdowns on each render
@@ -1221,6 +1222,12 @@ function render() {
   });
 }
 
+function setCasinoSession(active) {
+  try {
+    ensureCasinoUI();
+    state.ui.casino.inSession = !!active;
+  } catch {}
+}
 // --- Casino: Slots (Vegas 3x3, multi-line) ---
 const SLOTS_SYMBOLS = [
   { s: '🍒', w: 8, p3: 5, p2: 1.5 },
@@ -1270,7 +1277,8 @@ function linePayout(grid, line, betPerLine) {
 function ensureCasinoUI() {
   if (!state.ui || typeof state.ui !== 'object') state.ui = {};
   if (!state.ui.casino || typeof state.ui.casino !== 'object') {
-    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0, sound: true, volume: 0.06, auto: { running: false, remaining: 0, stopOnWin: true }, forceScatterNext: false, pendingSpin: null };
+    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0, sound: true, volume: 0.06, auto: { running: false, remaining: 0, stopOnWin: true }, forceScatterNext: false, pendingSpin: null, game: 'slots', bj: null, bjBet: 100, inSession: false };
+    state.ui.casino.totalWinnings = 0;
   }
   const ui = state.ui.casino;
   if (!Array.isArray(ui.grid)) ui.grid = slotsGrid();
@@ -1283,6 +1291,9 @@ function ensureCasinoUI() {
   ui.lines = Math.max(1, Math.min(7, ui.lines));
   if (typeof ui.freeSpins !== 'number' || !isFinite(ui.freeSpins)) ui.freeSpins = 0;
   if (!('pendingSpin' in ui)) ui.pendingSpin = null;
+  if (!('game' in ui)) ui.game = 'slots';
+  if (!('bjBet' in ui)) ui.bjBet = 100;
+  if (typeof ui.totalWinnings !== 'number') ui.totalWinnings = 0;
   // If page re-rendered mid-spin previously, ensure it is reset
   if (ui.spinning !== false) ui.spinning = false;
 }
@@ -1293,6 +1304,11 @@ function renderCasino() {
   try {
     ensureCasinoUI();
     const ui = state.ui.casino;
+  const tabs = document.createElement('div'); tabs.style.display='flex'; tabs.style.gap='8px'; tabs.style.justifyContent='center'; tabs.style.marginBottom='8px';
+  const tabSlots = el('button', { class: 'btn' + (ui.game==='slots'?' good':''), text: '🎰 Slots' }); tabSlots.onclick = ()=>{ ui.game='slots'; saveState(); render(); };
+  const tabBJ = el('button', { class: 'btn' + (ui.game==='blackjack'?' good':''), text: '🃑 Blackjack' }); tabBJ.onclick = ()=>{ ui.game='blackjack'; saveState(); render(); };
+  tabs.appendChild(tabSlots); tabs.appendChild(tabBJ); view.appendChild(tabs);
+  if (ui.game === 'blackjack') { renderBlackjack(); return; }
   const panel = el('div', { class: 'panel' }, [ el('div', { class: 'row' }, [ el('h3', { text: 'Casino — Slots' }), el('div', { class: 'spacer' }), el('span', { class: 'tag info', text: `${ui.lines} lines` }) ]) ]);
   const cont = document.createElement('div'); cont.className = 'slots'; panel.appendChild(cont);
   const layout = document.createElement('div'); layout.className = 'slots-layout'; cont.appendChild(layout);
@@ -1413,6 +1429,237 @@ function renderCasino() {
     view.appendChild(err);
   }
 }
+
+// --- Casino: Blackjack ---
+function bjNewShoe(){ const cards=[]; const ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K']; const suits=['♠','♥','♦','♣']; for(const r of ranks){ for(const s of suits){ cards.push(r+s); } } for(let i=cards.length-1;i>0;i--){ const j=randi(0,i+1); const t=cards[i]; cards[i]=cards[j]; cards[j]=t; } return cards; }
+function bjHandValue(cards){ let sum=0, aces=0; for(const c of cards){ const r=c.startsWith('10')?'10':c[0]; if (r==='A'){ aces++; sum+=11; } else if (r==='K'||r==='Q'||r==='J'||r==='1'){ sum+=10; } else sum+=parseInt(r,10)||0; } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
+function bjBlackjack(cards){ return cards.length===2 && bjHandValue(cards)===21; }
+function ensureBJ(){
+  ensureCasinoUI(); // Ensures state.ui.casino exists
+  const ui = state.ui.casino;
+  if (!ui.bj || typeof ui.bj !== 'object') {
+    // If bj object doesn't exist at all, create it fresh for a new game.
+    ui.bj = { shoe: bjNewShoe(), player: [], dealer: [], phase:'idle', hideHole:true, stake: 100, lastStake: 0, recent: [], totalWinnings: 0, winningsHistory: [0] };
+  }
+  // Ensure all fields are valid on the existing object, which handles migration from older save states without resetting winnings.
+  if (typeof ui.bj.stake !== 'number') ui.bj.stake = 100;
+  if (typeof ui.bj.lastStake !== 'number') ui.bj.lastStake = 0;
+  if (!Array.isArray(ui.bj.recent)) ui.bj.recent = [];
+  if (typeof ui.bj.totalWinnings !== 'number') ui.bj.totalWinnings = 0;
+  if (!Array.isArray(ui.bj.winningsHistory)) ui.bj.winningsHistory = [ui.bj.totalWinnings || 0];
+  if (ui.bj.winningsHistory.length === 0) ui.bj.winningsHistory.push(ui.bj.totalWinnings || 0);
+}
+function bjStakeTotal(){ try { return state.ui.casino.bj.stake||0; } catch { return 0; } }
+function bjUpdateBetInfo(){ try { const inf=document.getElementById('bjBetInfo'); if (inf) inf.textContent = `Bet ${fmt.format(bjStakeTotal())}`; } catch {} }
+function bjDeal(){ ensureBJ(); const u=state.ui.casino; const b=u.bj; if (b.phase!=='idle'&&b.phase!=='done') return; const stake=b.stake; if (stake<=0){ showToast('Place your bet.', 'info'); return; } if (state.money < stake){ showToast('Not enough cash for this bet.', 'warn'); return; } addMoney(-stake, 'Blackjack bet'); b.lastStake=stake; b.player=[]; b.dealer=[]; b.shoe = (b.shoe && b.shoe.length>15)? b.shoe : bjNewShoe(); b.player.push(b.shoe.pop(), b.shoe.pop()); b.dealer.push(b.shoe.pop(), b.shoe.pop()); b.hideHole=true; b.phase='player';
+  // The stack is cleared when the user next clicks a chip denomination,
+  // not when the hand is dealt. This keeps the bet visible on the table.
+  bjUpdateBetInfo();
+  try { const t=document.getElementById('bjTable'); if (t){ t.classList.add('deal'); setTimeout(()=> t.classList.remove('deal'), 360); } } catch {} bjUpdateUI(); bjAnimDeal(); }
+function bjHit(){ const b=state.ui.casino.bj; if (!b||b.phase!=='player') return; b.player.push(b.shoe.pop()); if (bjHandValue(b.player)>21){ b.phase='done'; bjSettle(); } bjUpdateUI(); }
+function bjStand(){ const b=state.ui.casino.bj; if (!b||b.phase!=='player') return; b.phase='dealer'; bjRevealDealerSequence(); }
+
+function bjRevealDealerSequence(){
+  try {
+    const b=state.ui.casino.bj; if (!b) return;
+    // Step 1: flip hole card
+    b.hideHole = false;
+    bjUpdateUI();
+    try { casinoPlayCounterFlip(); } catch {}
+    // Step 2: draw to 17, one by one
+    const drawNext = () => {
+      const dv = bjHandValue(b.dealer);
+      if (dv >= 17) { b.phase='done'; bjSettle(); bjUpdateUI(); return; }
+      // draw a card
+      const c = b.shoe.pop();
+      b.dealer.push(c);
+      bjUpdateUI();
+      try { casinoPlayCounterFlip(); } catch {}
+      setTimeout(drawNext, 500);
+    };
+    setTimeout(drawNext, 500);
+  } catch { bjUpdateUI(); }
+}
+function bjSettle(){ const u=state.ui.casino; const b=u.bj; const stake=b.lastStake||0; const pv=bjHandValue(b.player), dv=bjHandValue(b.dealer); let payout=0; let desc='Blackjack: ';
+  if (pv>21){ desc+='Player bust'; payout=0; }
+  else if (dv>21){ desc+='Dealer bust'; payout=stake*2; }
+  else if (bjBlackjack(b.player) && !bjBlackjack(b.dealer)){ desc+='Player blackjack'; payout=Math.round(stake*2.5); }
+  else if (bjBlackjack(b.dealer) && !bjBlackjack(b.player)){ desc+='Dealer blackjack'; payout=0; }
+  else if (pv>dv){ desc+=pv+' vs '+dv; payout=stake*2; }
+  else if (pv<dv){ desc+=pv+' vs '+dv; payout=0; }
+  else { desc+='Push'; payout=stake; }
+  if (payout>0) addMoney(payout, payout>stake? 'Blackjack win' : 'Blackjack push');
+  try {
+    const net = payout - stake;
+    b.totalWinnings = (b.totalWinnings || 0) + net;
+    if (!Array.isArray(b.recent)) b.recent = [];
+    b.recent.push({ net, total: stake, win: payout, desc });
+    if (!Array.isArray(b.winningsHistory)) b.winningsHistory = [0];
+    b.winningsHistory.push(b.totalWinnings);
+    if (b.winningsHistory.length > 100) b.winningsHistory.shift();
+    if (b.recent.length > 100) b.recent.shift();
+    renderBlackjackProfit();
+    saveState();
+  } catch {}
+}
+function renderBlackjack(){
+  const view=document.getElementById('view');
+  ensureCasinoUI();
+  const ui=state.ui.casino;
+  if (ui.game === 'blackjack' && ui.inSession !== true) {
+    // Only reset session-specific data when entering a new blackjack session
+    if (ui.bj && Array.isArray(ui.bj.recent)) {
+      ui.bj.recent = [];
+    }
+  }
+  ensureBJ(); const b=ui.bj; const panel = el('div', { class:'panel', id:'bjPanel' }); panel.appendChild(el('div', { class:'row' }, [ el('h3', { text:'Casino — Blackjack' }), el('div', { class:'spacer' }) ]));
+  const table = document.createElement('div'); table.className='bj-table felt-anim'; table.id='bjTable'; panel.appendChild(table);
+  // Left side (gameplay)
+  const left = document.createElement('div'); left.className='bj-left'; left.id='bjLeft'; table.appendChild(left);
+  // Winnings display (session and total)
+  const profitBox = el('div', { class: 'bj-profit-container' }, [
+    el('div', { class: 'bj-profit' }, [
+      el('div', { class: 'subtle', text: 'Session' }),
+      el('div', { class: 'result', id: 'bjProfitDisplay', text: '+/- $0' })
+    ])
+  ]);
+  table.appendChild(profitBox);
+  const overlay = document.createElement('div'); overlay.className='bj-overlay'; overlay.id='bjOverlay'; table.appendChild(overlay);
+  const shoe = document.createElement('div'); shoe.className='bj-shoe'; shoe.id='bjShoe'; table.appendChild(shoe);
+  // dealer
+  const dRow=document.createElement('div'); dRow.className='bj-row bj-dealer-row'; left.appendChild(dRow);
+  dRow.appendChild(el('div',{ class:'subtle', text:'Dealer' }));
+  const dHandWrap=document.createElement('div'); dHandWrap.className='bj-cards'; dHandWrap.id='bjDealer'; dRow.appendChild(dHandWrap);
+  const showDealerCards = b.dealer.map((c,i)=> (i===1 && b.hideHole)? '🂠' : c);
+  showDealerCards.forEach(c=>{ const card=document.createElement('div'); card.className='bj-card'+((/♥|♦/.test(c))?' red':''); card.textContent = c; dHandWrap.appendChild(card); });
+  const dVal = document.createElement('div'); dVal.className='bj-hand'; dVal.id='bjDealerVal'; if (b.phase!=='player' && b.dealer.length) dVal.textContent = `(${bjHandValue(b.dealer)})`; dRow.appendChild(dVal);
+  // player
+  const pRow=document.createElement('div'); pRow.className='bj-row bj-player-row'; left.appendChild(pRow);
+  pRow.appendChild(el('div',{ class:'subtle', text:'Player' }));
+  const pHandWrap=document.createElement('div'); pHandWrap.className='bj-cards'; pHandWrap.id='bjPlayer'; pRow.appendChild(pHandWrap);
+  b.player.forEach(c=>{ const card=document.createElement('div'); card.className='bj-card'+((/♥|♦/.test(c))?' red':''); card.textContent=c; pHandWrap.appendChild(card); });
+  const pVal = document.createElement('div'); pVal.className='bj-hand'; pVal.id='bjPlayerVal'; if (b.player.length) pVal.textContent = `(${bjHandValue(b.player)})`; pRow.appendChild(pVal);
+  // Right side (controls with slider)
+  const right = document.createElement('div'); right.className='bj-right'; right.id='bjRight'; table.appendChild(right);
+  const betBox = document.createElement('div'); betBox.className = 'bj-bet-box'; right.appendChild(betBox);
+  
+  const betLabel = el('div', { class: 'bj-bet-label' }, [
+    el('strong', { text: 'Your Bet' }),
+    el('span', { id: 'bjBetDisplay', text: fmt.format(b.stake) })
+  ]);
+  betBox.appendChild(betLabel);
+  
+  const maxBet = Math.min(state.money, 50000);
+  const betSlider = el('input', { type: 'range', min: '50', max: String(maxBet), step: '50', value: String(b.stake) });
+  betSlider.id = 'bjBetSlider';
+  betSlider.disabled = b.phase !== 'idle' && b.phase !== 'done';
+  betSlider.oninput = () => {
+    const v = parseInt(betSlider.value, 10);
+    b.stake = v;
+    const display = document.getElementById('bjBetDisplay');
+    if (display) display.textContent = fmt.format(v);
+    // No saveState() oninput for performance; will be saved on deal.
+  };
+  betBox.appendChild(betSlider);
+
+  const dealBtn=el('button',{ class:'btn good', id:'bjDeal', text:(b.phase==='idle'||b.phase==='done')?'Deal':'In Round' }); dealBtn.disabled=!(b.phase==='idle'||b.phase==='done'); dealBtn.onclick=()=> bjDeal();
+  const hitBtn=el('button',{ class:'btn', id:'bjHit', text:'Hit', onclick:()=> bjHit(), disabled: b.phase!=='player' });
+  const standBtn=el('button',{ class:'btn', id:'bjStand', text:'Stand', onclick:()=> bjStand(), disabled: b.phase!=='player' });
+  const ctr=document.createElement('div'); ctr.className='bj-controls'; betBox.appendChild(ctr);
+  ctr.appendChild(dealBtn); ctr.appendChild(hitBtn); ctr.appendChild(standBtn);
+
+  // status text
+  const stat = document.createElement('div'); stat.className='bj-status'; stat.id='bjStatus'; left.appendChild(stat);
+  // initial status text
+  bjUpdateStatus();
+  renderBlackjackProfit();
+
+  // Winnings History Graph
+  const historyPanel = el('div', { class: 'panel' }, [
+    el('div', { class: 'row' }, [ el('h3', { text: 'Lifetime Winnings' }) ]),
+    (() => {
+      const c = el('canvas', { id: 'bjWinningsChart', width: 320, height: 80, style: 'width:100%; height:80px;' });
+      const opts = {
+        zeroLine: true,
+        currentValue: b.totalWinnings,
+        formatter: (v) => (v >= 0 ? '+' : '') + fmt.format(v)
+      };
+      setTimeout(() => drawSparkline(c, b.winningsHistory || [0], '#7ee787', opts), 0);
+      return c;
+    })()
+  ]);
+
+  view.appendChild(panel);
+  view.appendChild(historyPanel);
+}
+
+function bjUpdateUI(){ try { const ui=state.ui.casino; if (!ui || !ui.bj) return; const b=ui.bj; const panel=document.getElementById('bjPanel'); if (!panel) { if (ui.game === 'blackjack') render(); return; }
+  const dealerC=document.getElementById('bjDealer'); const dealerV=document.getElementById('bjDealerVal'); const playerC=document.getElementById('bjPlayer'); const playerV=document.getElementById('bjPlayerVal');
+  if (dealerC){ dealerC.innerHTML=''; const show=b.dealer.map((c,i)=> (i===1 && b.hideHole)? '🂠' : c); show.forEach(c=>{ const d=document.createElement('div'); d.className='bj-card new'+((/♥|♦/.test(c))?' red':''); d.textContent=c; dealerC.appendChild(d); requestAnimationFrame(()=> d.classList.add('show')); }); }
+  if (dealerV){ dealerV.textContent = (b.phase!=='player' && b.dealer.length)? `(${bjHandValue(b.dealer)})` : ''; }
+  if (playerC){ playerC.innerHTML=''; b.player.forEach(c=>{ const d=document.createElement('div'); d.className='bj-card new'+((/♥|♦/.test(c))?' red':''); d.textContent=c; playerC.appendChild(d); requestAnimationFrame(()=> d.classList.add('show')); }); }
+  if (playerV){ playerV.textContent = b.player.length? `(${bjHandValue(b.player)})` : ''; }
+  const dealBtn=document.getElementById('bjDeal'), hitBtn=document.getElementById('bjHit'), standBtn=document.getElementById('bjStand'), slider=document.getElementById('bjBetSlider');
+  if (dealBtn) dealBtn.disabled = !(b.phase==='idle'||b.phase==='done'), dealBtn.textContent=(b.phase==='idle'||b.phase==='done')?'Deal':'In Round';
+  if (hitBtn) hitBtn.disabled = b.phase!=='player';
+  if (standBtn) standBtn.disabled = b.phase!=='player';
+  // Update chart
+  const chart = document.getElementById('bjWinningsChart');
+  if (chart) {
+    const opts = {
+      zeroLine: true,
+      currentValue: b.totalWinnings,
+      formatter: (v) => (v >= 0 ? '+' : '') + fmt.format(v)
+    };
+    drawSparkline(chart, b.winningsHistory || [0], '#7ee787', opts);
+  }
+
+  bjUpdateStatus();
+} catch {} }
+
+function bjUpdateStatus(){ try { const ui=state.ui.casino; const b=ui.bj; const el=document.getElementById('bjStatus'); if (!el) return; let txt=''; el.classList.remove('good','bad');
+  const pv=bjHandValue(b.player||[]); const dv=bjHandValue(b.dealer||[]);
+  if (b.phase==='idle') txt='Place your bet and Deal';
+  else if (b.phase==='player') txt = `Your turn — ${pv}`;
+  else if (b.phase==='dealer') txt = `Dealer plays…`;
+  else if (b.phase==='done') {
+    if (pv>21) { txt='Bust'; el.classList.add('bad'); }
+    else if (dv>21) { txt='Dealer bust — You win!'; el.classList.add('good'); }
+    else if (pv>dv) { txt='You win'; el.classList.add('good'); }
+    else if (pv<dv) { txt='You lose'; el.classList.add('bad'); }
+    else { txt='Push'; }
+    txt += ` — ${pv} vs ${dv}`;
+  }
+  el.textContent = txt;
+} catch {} }
+
+function renderBlackjackProfit() {
+  try {
+    ensureBJ();
+    const b = state.ui.casino.bj;
+    const sessionEl = document.getElementById('bjProfitDisplay');
+    if (sessionEl) {
+      const sum = (b.recent || []).reduce((acc, r) => acc + (r.net || 0), 0);
+      sessionEl.textContent = (sum >= 0 ? '+' : '') + fmt.format(sum);
+      sessionEl.classList.toggle('gain', sum > 0);
+      sessionEl.classList.toggle('loss', sum < 0);
+    }
+  } catch {}
+}
+function bjAnimDeal(){ try {
+  const overlay=document.getElementById('bjOverlay'); const shoe=document.getElementById('bjShoe'); const dealer=document.getElementById('bjDealer'); const player=document.getElementById('bjPlayer'); if (!overlay||!shoe||!dealer||!player) return;
+  const rO=overlay.getBoundingClientRect(); const rS=shoe.getBoundingClientRect();
+  const startX = rS.left - rO.left + rS.width/2 - 17; const startY = rS.top - rO.top + rS.height/2 - 24;
+  const targets=[player, dealer, player, dealer];
+  targets.forEach((t,i)=>{
+    setTimeout(()=>{
+      const card=document.createElement('div'); card.className='bj-card fly'; card.textContent='🂠'; card.style.left=startX+'px'; card.style.top=startY+'px'; overlay.appendChild(card);
+      const rT=t.getBoundingClientRect(); const dx=(rT.left - rO.left) + 6 + (t.children.length*10) - startX; const dy=(rT.top - rO.top) + 6 - startY;
+      requestAnimationFrame(()=>{ card.style.transform=`translate(${dx}px, ${dy}px)`; card.style.opacity='0.96'; });
+      setTimeout(()=>{ card.remove(); if (i===targets.length-1) bjUpdateUI(); try{ casinoPlayCounterFlip(); }catch{} }, 380);
+    }, i*160);
+  });
+} catch {} }
 function spinSlotsMulti(cellEls, spinBtn, stage){
   ensureCasinoUI();
   const ui = state.ui.casino;
@@ -1531,9 +1778,11 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
     // Update recent list with descriptive entry
     if (!triggeredBonus) {
       if (!Array.isArray(ui.recent)) ui.recent = [];
+      const net = totalWin - actualStake;
       const desc = buildWinnersDescription(winners);
-      ui.recent.push({ net: totalWin - actualStake, total: actualStake, win: totalWin, desc, free: isFree });
+      ui.recent.push({ net, total: actualStake, win: totalWin, desc, free: isFree });
       if (ui.recent.length > 100) ui.recent.shift();
+      ui.totalWinnings = (ui.totalWinnings || 0) + net;
     }
     saveState(); ui.spinning=false; spinBtn.disabled=false;
     // Result text removed (counter and timeline cover feedback)
@@ -1607,7 +1856,7 @@ function renderProfit() {
     const ui = state.ui.casino;
     const pv = document.querySelector('.slots .profit .result');
     if (!pv) return;
-    const sum = (ui.recent || []).reduce((a, b) => a + (b.net || 0), 0);
+    const sum = ui.totalWinnings || 0;
     pv.textContent = (sum >= 0 ? '+' : '') + fmt.format(sum);
     pv.classList.remove('gain','loss');
     if (sum > 0) pv.classList.add('gain');
@@ -1684,12 +1933,15 @@ function showBonusPick(baseBet, done){
             const pend = state.ui.casino.pendingSpin;
             if (pend) {
               const beforeAmt = fmt.format(pend.baseWin || 0);
+              const net = (pend.netBefore||0) + prize;
               const combinedDesc = `Bonus x${m} (${beforeAmt} won before bonus)`;
-              const entry = { net: (pend.netBefore||0) + prize, total: pend.stake||0, win: (pend.baseWin||0) + prize, desc: combinedDesc };
+              const entry = { net, total: pend.stake||0, win: (pend.baseWin||0) + prize, desc: combinedDesc };
               state.ui.casino.pendingSpin = null;
               state.ui.casino.recent.push(entry);
+              state.ui.casino.totalWinnings = (state.ui.casino.totalWinnings || 0) + net;
             } else {
               state.ui.casino.recent.push({ net: prize, total: 0, win: prize, desc: `Bonus x${m}` });
+              state.ui.casino.totalWinnings = (state.ui.casino.totalWinnings || 0) + prize;
             }
             if (state.ui.casino.recent.length > 100) state.ui.casino.recent.shift();
             saveState();
@@ -1718,11 +1970,11 @@ function casinoEnsureAudio(force = false) {
     if (!casinoAudio.ctx) {
       const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
       const ctx = new Ctx();
-      const gain = ctx.createGain();
-      const vol = Math.max(0, Math.min(1, (state.ui.casino.volume ?? 0.5)));
-      gain.gain.value = (0.05 + 0.85 * vol); // much louder headroom
-      gain.connect(ctx.destination);
-      casinoAudio.ctx = ctx; casinoAudio.master = gain;
+      const masterGain = ctx.createGain();
+      masterGain.connect(ctx.destination);
+      casinoAudio.ctx = ctx; casinoAudio.master = masterGain;
+      // Apply volume from state immediately
+      casinoApplyVolume();
     }
     if (casinoAudio.ctx && casinoAudio.ctx.state === 'suspended') { casinoAudio.ctx.resume(); }
   } catch {}
@@ -2076,7 +2328,6 @@ function refreshAll() {
 }
 
 // --- Init ---
-maybeAutoResetOnExistingSave();
 // Ensure any pre-existing save is migrated before first render
 migrateState();
 if (!state.illegalMarket.length) refreshIllegalMarket();

@@ -690,3 +690,145 @@ tbody tr:hover { background: rgba(255,255,255,0.04); }
 .options-wrap .btn { min-width: 160px; }
 .options-field { display: flex; align-items: center; gap: 8px; }
 .options-field select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+
+/* Blackjack table + chips */
+.bj-table { background: radial-gradient(120% 120% at 50% 20%, #1f5a2b 0%, #12441d 60%, #0e3a18 100%); border: 2px solid #2c6b36; border-radius: 18px; padding: 16px; box-shadow: inset 0 6px 24px rgba(0,0,0,0.25), 0 16px 34px rgba(0,0,0,0.35); display: grid; grid-template-areas: "dealer" "player" "betting"; grid-template-rows: auto 1fr auto; gap: 16px; align-items: start; min-height: 420px; }
+.bj-table.felt-anim { position: relative; overflow: hidden; }
+.bj-table.felt-anim::after { content: ''; position: absolute; inset: -40% -60% auto -60%; height: 180%; background: radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.06), transparent 60%); mix-blend-mode: soft-light; animation: feltSweep 6s ease-in-out infinite; pointer-events: none; }
+@keyframes feltSweep { 0% { transform: translateX(-30%) rotate(12deg); opacity: .15; } 50% { transform: translateX(30%) rotate(12deg); opacity: .25; } 100% { transform: translateX(-30%) rotate(12deg); opacity: .15; } }
+.bj-table.deal { animation: tableBump 340ms cubic-bezier(.2,.8,.2,1); }
+@keyframes tableBump { 0% { transform: scale(1); } 40% { transform: scale(1.015); } 100% { transform: scale(1); } }
+.bj-row { display: grid; gap: 6px; place-items: center; min-height: 110px; }
+.bj-hand { display: flex; gap: 6px; font-variant-numeric: tabular-nums; color: #f0ffee; text-shadow: 0 1px 2px rgba(0,0,0,0.25); min-height: 24px; }
+.bj-cards { display: flex; gap: 8px; }
+.bj-card { min-width: 56px; height: 78px; border-radius: 8px; background: #fff; color: #111; display: grid; place-items: center; font-weight: 800; font-size: 18px; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 3px 10px rgba(0,0,0,0.28); }
+.bj-card.fly { position: absolute; z-index: 6; transition: transform 360ms cubic-bezier(.2,.8,.2,1), opacity 360ms ease; }
+.bj-card.new { opacity: 0; transform: translateY(-8px) scale(.98); transition: transform 220ms ease, opacity 220ms ease; }
+.bj-card.new.show { opacity: 1; transform: translateY(0) scale(1); }
+.bj-card.red { color: #b31616; }
+.bj-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; grid-area: 1 / 1 / -1 / -1; }
+.bj-controls {
+  display: flex; gap: 10px; justify-content: center; align-items: center;
+  margin-top: 16px; flex-wrap: wrap;
+}
+.bj-controls .btn { min-width: 100px; border: 1px solid rgba(255,255,255,0.08); background: linear-gradient(180deg, rgba(26,30,36,0.95), rgba(16,20,26,0.95)); box-shadow: 0 6px 18px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06); border-radius: 10px; }
+.bj-controls .btn.good { background: linear-gradient(180deg, #1d5a2a, #164923); border-color: #255f33; }
+.bj-controls .btn:disabled { opacity: .6; }
+.bj-chipbar { display: flex; gap: 12px; justify-content: center; align-items: center; margin: 12px 0 6px; flex-wrap: wrap; padding: 8px; background: var(--panel-3); border-radius: 12px; border: 1px solid var(--border); }
+.bj-left { grid-area: dealer / 1 / player / 2; display: grid; grid-template-rows: 1fr 1fr; gap: 12px; }
+.bj-dealer-row { grid-row: 1; align-self: end; }
+.bj-player-row { grid-row: 2; }
+.bj-right { grid-area: betting; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.bj-shoe { position: absolute; top: 16px; right: 16px; width: 60px; height: 82px; border: 2px solid rgba(0,0,0,0.2); background: #8c2a2a; border-radius: 8px; box-shadow: inset 0 0 12px rgba(0,0,0,0.4); }
+.chip { width: 52px; height: 52px; border-radius: 50%; position: relative; cursor: pointer; display: grid; place-items: center; font-weight: 900; color: #0b0b0b; text-shadow: 0 1px 0 rgba(255,255,255,0.45); border: 2px solid rgba(0,0,0,0.25); box-shadow: 0 8px 18px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.2); transition: transform 120ms ease, box-shadow 160ms ease, filter 160ms ease; }
+/* Rim stripes */
+.chip::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: repeating-conic-gradient(rgba(255,255,255,0.9) 0 10deg, transparent 10deg 25deg); opacity: .9; mix-blend-mode: screen; }
+/* Inner ring */
+.chip::after { content: ''; position: absolute; inset: 12px; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.85), 0 0 0 2px rgba(0,0,0,0.08); background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.95) 0 55%, rgba(255,255,255,0.85) 60%, transparent 61%); }
+.chip .val { position: relative; z-index: 1; font-size: 13px; padding: 2px 6px; border-radius: 8px; background: rgba(255,255,255,0.95); box-shadow: 0 1px 0 rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.05); }
+.chip:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(0,0,0,0.4), inset 0 2px 0 rgba(255,255,255,0.25); filter: saturate(1.05); }
+.chip:active { transform: translateY(0); box-shadow: 0 6px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.2); }
+.chip.sel { outline: 3px solid rgba(255,255,255,0.28); box-shadow: 0 0 0 2px rgba(255,255,255,0.22), 0 14px 28px rgba(0,0,0,0.45); transform: translateY(-2px) scale(1.04); }
+/* Denomination colorways */
+.chip.c50 { background: linear-gradient(180deg, #a9dcff, #7bc8ff); }
+.chip.c100 { background: linear-gradient(180deg, #ffe88a, #ffd558); }
+.chip.c250 { background: linear-gradient(180deg, #ffacad, #ff8c8f); }
+.chip.c500 { background: linear-gradient(180deg, #bff9b3, #8eea7d); }
+.chip.c1000 { background: linear-gradient(180deg, #d8c0ff, #c1a0ff); }
+.chip.c5000 { background: linear-gradient(180deg, #ffdf8d, #ffca4f); }
+.bj-betspot { width: 120px; height: 120px; border-radius: 999px; border: 2px dashed rgba(255,255,255,0.35); display: grid; place-items: center; position: static; transform: none; margin: 12px 0; box-shadow: inset 0 2px 20px rgba(0,0,0,0.25), 0 6px 20px rgba(0,0,0,0.25); }
+.bj-betspot .betinfo { color: #f0ffee; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,0.25); font-size: 14px; opacity: 0.95; }
+.chip-fly { position: absolute; pointer-events: none; z-index: 5; }
+.bj-betspot .chip { position: absolute; width: 44px; height: 44px; cursor: pointer; transform: translate(-50%, -50%); }
+.bj-betspot .chip .val { font-size: 11px; }
+
+.bj-profit-container {
+  position: absolute;
+  top: 16px; left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bj-profit {
+  background: var(--panel-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  text-align: center;
+}
+.bj-profit .result.gain { color: var(--good); }
+.bj-profit .result.loss { color: var(--danger); }
+.bj-bet-box {
+  background: var(--panel-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.2);
+  width: 100%;
+  max-width: 280px;
+  text-align: center;
+}
+
+.bj-bet-label {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.bj-betspot .chip .val { font-size: 11px; }
+.bj-betspot .chip { position: absolute; width: 44px; height: 44px; cursor: pointer; transform: translate(-50%, -50%); }
+.bj-betspot .chip .val { font-size: 11px; }
+
+/* --- Custom Range Sliders (Blackjack Bet) --- */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Track */
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+/* Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px; /* center vertically */
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  border: 2px solid var(--panel-3);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.3);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  border: 2px solid var(--panel-3);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.3);
+}
+
+input[type="range"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

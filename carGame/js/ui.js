@@ -248,7 +248,12 @@ export function renderCenterNavUI({ state, currentView, navItems, onSetView }) {
 }
 
 // Lightweight sparkline renderer for small charts
-export function drawSparkline(canvas, points, color = '#57b6ff') {
+export function drawSparkline(canvas, points, color = '#57b6ff', options = {}) {
+  const {
+    zeroLine = false,
+    currentValue,
+    formatter = (v) => v.toString()
+  } = options;
   if (!canvas || !points || points.length < 2) return;
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.clientWidth || 320;
@@ -260,8 +265,8 @@ export function drawSparkline(canvas, points, color = '#57b6ff') {
   ctx.scale(dpr, dpr);
   const w = cssW, h = cssH;
   ctx.clearRect(0, 0, w, h);
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+  const min = Math.min(...points, zeroLine ? 0 : Infinity);
+  const max = Math.max(...points, zeroLine ? 0 : -Infinity);
   const pad = 6;
   const n = points.length;
   const xFor = (i) => pad + (w - 2 * pad) * (i / Math.max(1, (n - 1)));
@@ -270,13 +275,16 @@ export function drawSparkline(canvas, points, color = '#57b6ff') {
     const t = (v - min) / (max - min);
     return h - pad - (h - 2 * pad) * t;
   };
-  // background grid line
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, yFor(points[0]));
-  ctx.lineTo(w, yFor(points[0]));
-  ctx.stroke();
+  // background grid line at y=0 if requested
+  if (zeroLine) {
+    const y0 = yFor(0);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y0);
+    ctx.lineTo(w, y0);
+    ctx.stroke();
+  }
   // line
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
@@ -312,6 +320,19 @@ export function drawSparkline(canvas, points, color = '#57b6ff') {
   ctx.lineTo(xFor(0), h - pad);
   ctx.closePath();
   ctx.fill();
+  // Current value text
+  if (typeof currentValue === 'number') {
+    ctx.font = '700 14px ui-sans-serif, system-ui';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    const formatted = formatter(currentValue);
+    const yPos = yFor(currentValue);
+    const isHigh = yPos < h / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillText(formatted, w - pad - 1, isHigh ? yPos + 5 : yPos - 21);
+    ctx.fillStyle = '#e7edf3';
+    ctx.fillText(formatted, w - pad, isHigh ? yPos + 4 : yPos - 22);
+  }
 }
 
 // --- Market helpers ---

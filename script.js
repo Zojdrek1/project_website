@@ -32,6 +32,12 @@ function writeHash(route, params){
   if (location.hash !== next) location.hash = next;
 }
 function setRoute(r){
+  // Notify carGame script about casino session state
+  try {
+    if (typeof setCasinoSession === 'function') {
+      setCasinoSession(r === 'casino');
+    }
+  } catch {}
   const parsed = parseHash();
   const route = (r || parsed.route || 'home');
   Object.values(panels).forEach(p => p && p.classList.remove('active'));
