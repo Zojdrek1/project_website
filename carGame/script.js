@@ -694,6 +694,8 @@ function renderDevPanel() {
     [ el('button', { class: 'btn good', text: '+5 Free Spins', onclick: () => devAddFreeSpins(5) }),
       el('button', { class: 'btn good', text: '+50 Free Spins', onclick: () => devAddFreeSpins(50) }),
       el('button', { class: 'btn warn', text: 'Clear Free Spins', onclick: () => devAddFreeSpins('clear') }) ],
+    [ el('button', { class: 'btn', text: 'Trigger Bonus 💰', onclick: () => devTriggerScatterNow() }),
+      el('button', { class: 'btn', text: 'Force Next Bonus', onclick: () => devForceScatterNext() }) ],
   ]);
 }
 
@@ -704,6 +706,13 @@ function ensureDevUI() {
 }
 function isDevSectionOpen(key) { ensureDevUI(); return !!state.ui.dev.sections[key]; }
 function toggleDevSection(key) { ensureDevUI(); state.ui.dev.sections[key] = !state.ui.dev.sections[key]; saveState(); }
+
+function devTriggerScatterNow(){
+  try { ensureCasinoUI(); const bet = (state.ui.casino.betPerLine||0) * (state.ui.casino.lines||1); showBonusPick(bet, ()=> saveState()); } catch {}
+}
+function devForceScatterNext(){
+  try { ensureCasinoUI(); state.ui.casino.forceScatterNext = true; saveState(); showToast('Dev: will trigger Bonus on next spin', 'info'); } catch {}
+}
 
 function openImagePicker(model) {
   const input = document.createElement('input');
@@ -1261,7 +1270,7 @@ function linePayout(grid, line, betPerLine) {
 function ensureCasinoUI() {
   if (!state.ui || typeof state.ui !== 'object') state.ui = {};
   if (!state.ui.casino || typeof state.ui.casino !== 'object') {
-    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0, sound: true, volume: 0.06 };
+    state.ui.casino = { betPerLine: 100, lines: 5, grid: slotsGrid(), spinning: false, lastWin: 0, freeSpins: 0, sound: true, volume: 0.06, auto: { running: false, remaining: 0, stopOnWin: true }, forceScatterNext: false, pendingSpin: null };
   }
   const ui = state.ui.casino;
   if (!Array.isArray(ui.grid)) ui.grid = slotsGrid();
@@ -1273,6 +1282,7 @@ function ensureCasinoUI() {
   if (typeof ui.lines !== 'number' || !isFinite(ui.lines)) ui.lines = 5;
   ui.lines = Math.max(1, Math.min(7, ui.lines));
   if (typeof ui.freeSpins !== 'number' || !isFinite(ui.freeSpins)) ui.freeSpins = 0;
+  if (!('pendingSpin' in ui)) ui.pendingSpin = null;
   // If page re-rendered mid-spin previously, ensure it is reset
   if (ui.spinning !== false) ui.spinning = false;
 }
@@ -1323,10 +1333,28 @@ function renderCasino() {
     updateTotal();
     const spinBtn = el('button', { class: 'btn good', text: 'Spin 🎰' });
   spinBtn.onclick = ()=> spinSlotsMulti(cellEls, spinBtn, stage);
-    // Sound toggle + volume
-    controls.appendChild(selBet); controls.appendChild(selLines); controls.appendChild(total);
+    // Controls row: bet, lines, auto count, total
+    const autoSel = document.createElement('select'); [10,25,50].forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent=`Auto ${v}`; autoSel.appendChild(o); });
+    autoSel.value = String((ui.auto && ui.auto.remaining) || 10);
+    controls.appendChild(selBet); controls.appendChild(selLines); controls.appendChild(autoSel); controls.appendChild(total);
     const spinBox = document.createElement('div'); spinBox.className = 'panelish spinbox'; machine.appendChild(spinBox);
-    spinBox.appendChild(spinBtn);
+    const spinRow = document.createElement('div'); spinRow.className = 'row'; spinBox.appendChild(spinRow);
+    spinRow.appendChild(spinBtn);
+    // Auto toggle icon next to Spin
+    const autoToggle = el('button', { class: 'btn auto-toggle' + ((ui.auto&&ui.auto.running)?' active':''), title: 'Auto Spin', text: '🔁' });
+    const stopOnWin = document.createElement('label'); stopOnWin.style.display='inline-flex'; stopOnWin.style.alignItems='center'; stopOnWin.style.gap='6px'; stopOnWin.style.marginLeft='6px';
+    const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = !!(ui.auto && ui.auto.stopOnWin !== false); chk.onchange = ()=>{ ui.auto.stopOnWin = chk.checked; saveState(); };
+    stopOnWin.appendChild(chk); stopOnWin.appendChild(document.createTextNode('Stop on Win'));
+    const toggleAuto = ()=>{
+      ensureCasinoUI();
+      if (!ui.auto) ui.auto = { running:false, remaining:0, stopOnWin:true };
+      if (ui.auto.running) { ui.auto.running=false; autoToggle.classList.remove('active'); saveState(); return; }
+      ui.auto.running=true; ui.auto.remaining = parseInt(autoSel.value||'10',10)||10; autoToggle.classList.add('active'); saveState();
+      if (!ui.spinning) spinSlotsMulti(cellEls, spinBtn, stage);
+    };
+    autoToggle.onclick = toggleAuto;
+    spinRow.appendChild(autoToggle);
+    spinRow.appendChild(stopOnWin);
     // Free spins badge directly under the Spin button (centered by spinBox grid)
   const fsBadge = document.createElement('div'); fsBadge.className = 'fs-badge'; fsBadge.setAttribute('data-role','fs'); spinBox.appendChild(fsBadge);
 
@@ -1339,7 +1367,7 @@ function renderCasino() {
   const rulesInner = document.createElement('div'); rulesInner.className = 'inner'; rulesBox.appendChild(rulesInner);
   rulesInner.appendChild(el('div', { class: 'subtle', text: 'Rules' }));
   const rulesList = document.createElement('ul'); rulesInner.appendChild(rulesList);
-  ;['Pays left-to-right on active lines','Three in a row pays most','Pairs pay on first two symbols only','🃏 is Wild and substitutes on lines','3+ 🃏 anywhere award 5 Free Spins','Choose lines (1/3/5/7) and bet per line','Gambling carries risk — play responsibly'].forEach(t=>{ const li=document.createElement('li'); li.textContent=t; rulesList.appendChild(li); });
+  ;['Pays left-to-right on active lines','Three in a row pays most','Pairs pay on first two symbols only','🃏 is Wild and substitutes on lines','3+ 🃏 anywhere award 5 Free Spins','💰 Scatter: 3+ anywhere triggers Bonus Pick (x1–x10 of total bet)','Choose lines (1/3/5/7) and bet per line','Gambling carries risk — play responsibly'].forEach(t=>{ const li=document.createElement('li'); li.textContent=t; rulesList.appendChild(li); });
   // Left timeline was not created earlier, create now if missing
   const colLeft = layout.firstChild; // slots .side timeline container
   if (colLeft && colLeft.classList && colLeft.classList.contains('side')) {
@@ -1360,6 +1388,22 @@ function renderCasino() {
     setWinCounter((ui.lastWin||0), false);
     updateCounterCurrency();
     renderFreeSpins();
+    // Keyboard shortcuts (attach once)
+    if (!ui.__kb) {
+      ui.__kb = true;
+      window.addEventListener('keydown', (e)=>{
+        try {
+          if (e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.isContentEditable)) return;
+          if (currentView !== 'casino') return;
+          if (e.code==='Space') { e.preventDefault(); if (!ui.spinning) spinBtn.click(); return; }
+          if (e.key==='1'||e.key==='3'||e.key==='5'||e.key==='7') { selLines.value=e.key; selLines.onchange(); return; }
+          if (e.key==='+'||e.key==='=') { const idx=Math.min(selBet.options.length-1, selBet.selectedIndex+1); selBet.selectedIndex=idx; selBet.onchange(); return; }
+          if (e.key==='-'||e.key==='_') { const idx=Math.max(0, selBet.selectedIndex-1); selBet.selectedIndex=idx; selBet.onchange(); return; }
+          if (e.key.toLowerCase()==='a') { e.preventDefault(); toggleAuto(); return; }
+          if (e.key==='Escape') { if (ui.auto && ui.auto.running){ toggleAuto(); } }
+        } catch {}
+      });
+    }
     renderTimeline();
     renderProfit();
     syncTimelineHeight();
@@ -1382,6 +1426,8 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
   casinoEnsureAudio();
   if (ui.sound !== false) casinoPlayStart();
   // per-reel ticking handled per column (see below)
+  // reset counter gold state on new spin
+  try { const ctr = document.querySelector('.slots .cabinet .win-counter'); if (ctr) ctr.classList.remove('gold'); } catch {}
   // Reset counter to 0 immediately on spin start
   setWinCounter(0, false);
   if (isFree) { ui.freeSpins = Math.max(0, (ui.freeSpins||0) - 1); saveState(); }
@@ -1394,7 +1440,15 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
   drawSlotsLines(stage, cellEls, ui.lines, 'preview');
   const previewMs = 350;
   // Precompute final grid so each column can settle to its real symbols when it stops
-  const finalGrid = slotsGrid();
+  let finalGrid = slotsGrid();
+  // Dev: force scatter bonus for next spin if requested
+  if (ui.forceScatterNext) {
+    try {
+      const positions = Array.from({length:9}, (_,i)=>i).sort(()=>Math.random()-0.5).slice(0,3);
+      positions.forEach(idx => { const r = Math.floor(idx/3), c = idx%3; finalGrid[r][c] = '💰'; });
+    } catch {}
+    ui.forceScatterNext = false; saveState();
+  }
   setTimeout(()=>{
     clearSlotsLines(stage);
     // Fallback with column intervals to ensure visible updates across browsers
@@ -1444,6 +1498,8 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
       const w = linePayout(grid, ln, ui.betPerLine);
       if (w>0) { totalWin += w; winners.push({ln}); }
     });
+    // coin cascade ticks per winning lines
+    try { if (winners.length) { const n = Math.min(10, winners.length*3); for(let i=0;i<n;i++){ setTimeout(()=> casinoPlayTick(), 40*i); } } } catch {}
     // highlight winners
     winners.forEach(w=>{ const ln = w.ln; for(let c=0;c<3;c++){ const r=ln[c]; const cell = cellEls.find(x=>x.r===r && x.c===c); if(cell) cell.el.classList.add('win'); } });
     // draw lines, highlighting winners, with flash after all columns stopped
@@ -1453,7 +1509,8 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
     if (totalWin>0) { addMoney(totalWin, 'Slots win'); addXP(Math.min(25, Math.round(totalWin/400)), 'Slots'); }
     else addXP(2, 'Slots');
     if (totalWin>0) casinoPlayWin(totalWin);
-    // Award free spins if 3+ wilds anywhere on the grid
+    // Award free spins; capture scatter bonus state
+    let triggeredBonus = false;
     try {
       const flat = grid.flat();
       const wilds = flat.filter(s => s === '🃏').length;
@@ -1462,18 +1519,40 @@ function spinSlotsMulti(cellEls, spinBtn, stage){
         showToast('Free Spins +5 (🃏)', 'good');
         renderFreeSpins();
       }
+      // Bonus scatter: 3+ 💰 triggers pick bonus
+      const scat = flat.filter(s => s === '💰').length;
+      if (scat >= 3) {
+        triggeredBonus = true;
+        // store pending spin summary to combine with bonus payout
+        try { ui.pendingSpin = { netBefore: totalWin - actualStake, stake: actualStake, baseWin: totalWin, desc: buildWinnersDescription(winners) }; saveState(); } catch {}
+        bonusIntro(()=> showBonusPick(ui.betPerLine * ui.lines, () => { saveState(); }));
+      }
     } catch {}
     // Update recent list with descriptive entry
-    if (!Array.isArray(ui.recent)) ui.recent = [];
-    const desc = buildWinnersDescription(winners);
-    ui.recent.push({ net: totalWin - actualStake, total: actualStake, win: totalWin, desc, free: isFree });
-    if (ui.recent.length > 100) ui.recent.shift();
+    if (!triggeredBonus) {
+      if (!Array.isArray(ui.recent)) ui.recent = [];
+      const desc = buildWinnersDescription(winners);
+      ui.recent.push({ net: totalWin - actualStake, total: actualStake, win: totalWin, desc, free: isFree });
+      if (ui.recent.length > 100) ui.recent.shift();
+    }
     saveState(); ui.spinning=false; spinBtn.disabled=false;
     // Result text removed (counter and timeline cover feedback)
     setWinCounter(totalWin, true);
     renderTimeline();
     renderProfit();
     syncTimelineHeight();
+    // Auto-spin loop
+    try {
+      if (ui.auto && ui.auto.running) {
+        if (ui.auto.stopOnWin && totalWin>0) { ui.auto.running=false; }
+        else if (ui.auto.remaining>0) {
+          ui.auto.remaining -= 1; saveState();
+          setTimeout(()=>{ if (!ui.spinning) spinSlotsMulti(cellEls, spinBtn, stage); }, 500);
+          return;
+        } else { ui.auto.running=false; }
+        saveState();
+      }
+    } catch {}
   }
 
   function renderRecent(){ renderTimeline(); syncTimelineHeight(); }
@@ -1548,6 +1627,88 @@ function renderFreeSpins() {
   } catch {}
 }
 
+// Simple bonus pick mini-game (scatter 3+)
+function showBonusPick(baseBet, done){
+  try {
+    const modal = document.createElement('div'); modal.className='race-modal open'; // reuse modal styles
+    const backdrop = document.createElement('div'); backdrop.className='race-backdrop'; modal.appendChild(backdrop);
+    const panel = document.createElement('div'); panel.className='race-panel bonus-panel'; modal.appendChild(panel);
+    const title = document.createElement('div'); title.className='race-title'; title.textContent = 'Bonus Pick — Choose a Coin'; panel.appendChild(title);
+    const hint = document.createElement('div'); hint.className='subtle'; hint.style.textAlign='center'; hint.textContent='Pick one to reveal a multiplier (x1–x10)'; panel.appendChild(hint);
+    const rain = document.createElement('div'); rain.className='coin-rain'; panel.appendChild(rain);
+    // continuous coin rain
+    try {
+      const spawn = ()=>{
+        const batch = 6 + Math.floor(Math.random()*6);
+        for (let i=0;i<batch;i++){
+          const sp=document.createElement('span');
+          sp.textContent = Math.random()<0.4? '🪙' : (Math.random()<0.5?'💰':'✨');
+          sp.style.left = Math.round(Math.random()*100)+'%';
+          sp.style.animationDuration = (2.2 + Math.random()*2.2)+'s';
+          sp.style.animationDelay = (Math.random()*0.6)+'s';
+          rain.appendChild(sp);
+          // cleanup after animation
+          setTimeout(()=> sp.remove(), 4500);
+        }
+      };
+      spawn();
+      panel.__coinRainTimer = setInterval(spawn, 700);
+    } catch {}
+    const area = document.createElement('div'); area.style.position='relative'; area.style.zIndex='1'; area.style.display='grid'; area.style.gridTemplateColumns='repeat(5, 1fr)'; area.style.gap='12px'; area.style.justifyItems='center'; area.style.margin='12px 0 8px'; panel.appendChild(area);
+    const multipliers = [1,2,5,10,3];
+    const shuffled = multipliers.sort(()=>Math.random()-0.5);
+    shuffled.forEach(m=>{
+      const b = document.createElement('button'); b.className='btn coin-btn'; b.style.minWidth='64px'; b.style.minHeight='64px';
+      const inner = document.createElement('div'); inner.className='coin-inner';
+      const front = document.createElement('div'); front.className='coin-face front'; front.textContent='💰';
+      const back = document.createElement('div'); back.className='coin-face back'; back.textContent='x'+m;
+      inner.appendChild(front); inner.appendChild(back); b.appendChild(inner);
+      b.onclick = ()=>{
+        const prize = Math.round((baseBet||0) * m);
+        // flip reveal then award
+        b.classList.add('reveal');
+        try { casinoPlayCounterFlip(); } catch {}
+        // disable other buttons
+        Array.from(area.querySelectorAll('button')).forEach(btn=> btn.disabled=true);
+        setTimeout(()=>{
+          // Payout + feedback
+          addMoney(prize, `Bonus x${m}`);
+          showToast(`Bonus: x${m} → ${fmt.format(prize)}`, 'good');
+          casinoPlayWin(prize);
+          try { setWinCounter(prize, true); } catch {}
+          try { bonusMoneyBurst(); } catch {}
+          // Log into timeline (combine with pending spin if present)
+          try {
+            ensureCasinoUI();
+            if (!Array.isArray(state.ui.casino.recent)) state.ui.casino.recent = [];
+            const pend = state.ui.casino.pendingSpin;
+            if (pend) {
+              const beforeAmt = fmt.format(pend.baseWin || 0);
+              const combinedDesc = `Bonus x${m} (${beforeAmt} won before bonus)`;
+              const entry = { net: (pend.netBefore||0) + prize, total: pend.stake||0, win: (pend.baseWin||0) + prize, desc: combinedDesc };
+              state.ui.casino.pendingSpin = null;
+              state.ui.casino.recent.push(entry);
+            } else {
+              state.ui.casino.recent.push({ net: prize, total: 0, win: prize, desc: `Bonus x${m}` });
+            }
+            if (state.ui.casino.recent.length > 100) state.ui.casino.recent.shift();
+            saveState();
+            renderTimeline();
+            renderProfit();
+          } catch {}
+          if (panel.__coinRainTimer) { clearInterval(panel.__coinRainTimer); }
+          modal.remove();
+          try { const ctr = document.querySelector('.slots .cabinet .win-counter'); if (ctr) ctr.classList.add('gold'); } catch {}
+          try { setTimeout(()=> counterMoneyExplode(), 60); } catch {}
+          done && done(prize);
+        }, 480);
+      }; area.appendChild(b);
+    });
+    // Remove close button — bonus must be picked
+    document.body.appendChild(modal);
+  } catch {}
+}
+
 // --- Casino Audio (simple WebAudio SFX) ---
 let casinoAudio = { ctx: null, master: null, spin: null, tickers: {} };
 function casinoEnsureAudio(force = false) {
@@ -1604,6 +1765,7 @@ function casinoPlayTick(){ if (!casinoReady()) return; tone(1800, 0.02, 'square'
 function casinoTickStart(col){ try { casinoTickStop(col); if (!casinoReady()) return; const base=[120,100,90][col]||110; const id = setInterval(()=> casinoPlayTick(), base); casinoAudio.tickers[col]=id; } catch {} }
 function casinoTickStop(col){ try { const id = casinoAudio.tickers && casinoAudio.tickers[col]; if (id) { clearInterval(id); casinoAudio.tickers[col]=null; } } catch {} }
 function sfxGain(x){ try { const ua = navigator.userAgent; const isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua); return isSafari ? x*2.2 : x; } catch { return x; } }
+function casinoPlayCounterFlip(){ if (!casinoReady()) return; tone(1200, 0.03, 'square', 0.06); }
 function tone(freq, dur, type='sine', gain=0.03){ try { if (!casinoAudio.ctx) return; const ctx=casinoAudio.ctx; const osc=ctx.createOscillator(); const g=ctx.createGain(); osc.type=type; osc.frequency.value=freq; const gg=sfxGain(gain); g.gain.setValueAtTime(gg, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur); osc.connect(g); g.connect(casinoAudio.master); osc.start(); osc.stop(ctx.currentTime + dur); } catch {} }
 function thunk(freq=160){ try { if (!casinoAudio.ctx) return; const ctx=casinoAudio.ctx; const osc=ctx.createOscillator(); const g=ctx.createGain(); osc.type='sine'; osc.frequency.setValueAtTime(freq, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(freq*0.6, ctx.currentTime+0.08); const gg=sfxGain(0.05); g.gain.setValueAtTime(gg, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.12); osc.connect(g); g.connect(casinoAudio.master); osc.start(); osc.stop(ctx.currentTime+0.13); // tiny noise click
   const buffer=ctx.createBuffer(1, ctx.sampleRate*0.06, ctx.sampleRate); const data=buffer.getChannelData(0); for(let i=0;i<data.length;i++){ data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,2); } const src=ctx.createBufferSource(); src.buffer=buffer; const gn=ctx.createGain(); gn.gain.value=0.03; src.connect(gn); gn.connect(casinoAudio.master); src.start(); } catch {} }
@@ -1658,6 +1820,10 @@ function setWinCounter(value, animate=true) {
     }
     // Animate from current to target
     requestAnimationFrame(apply);
+    // Play a subtle flip cascade once per digit when animating
+    try {
+      for (let i=0;i<digits.length;i++) setTimeout(()=> casinoPlayCounterFlip && casinoPlayCounterFlip(), 60*i);
+    } catch {}
   } catch {}
 }
 
@@ -1666,6 +1832,104 @@ function updateCounterCurrency() {
     const el = document.querySelector('.slots .cabinet .win-counter .counter-currency');
     if (el) el.textContent = currencySymbol();
   } catch {}
+}
+
+// Simple money burst animation inside the cabinet
+function bonusMoneyBurst(){
+  try {
+    const cab = document.querySelector('.slots .cabinet');
+    if (!cab) return;
+    const n = 12;
+    for (let i=0;i<n;i++){
+      const s = document.createElement('div');
+      s.textContent = Math.random()<0.5 ? '💸' : '🪙';
+      s.style.position='absolute';
+      s.style.pointerEvents='none';
+      s.style.left = (35 + Math.random()*30) + '%';
+      s.style.top = '40%';
+      s.style.fontSize = (18 + Math.random()*10) + 'px';
+      s.style.opacity = '0.95';
+      cab.appendChild(s);
+      const dx = (Math.random()*2-1) * 60;
+      const dy = - (60 + Math.random()*50);
+      const rot = (Math.random()*2-1) * 80;
+      const dur = 600 + Math.random()*400;
+      const start = performance.now();
+      const step = (t)=>{
+        const p = Math.min(1, (t-start)/dur);
+        const ease = p*p*(3-2*p);
+        s.style.transform = `translate(${dx*ease}px, ${dy*ease}px) rotate(${rot*ease}deg)`;
+        s.style.opacity = String(0.95*(1-p));
+        if (p<1) requestAnimationFrame(step); else s.remove();
+      };
+      requestAnimationFrame(step);
+    }
+    // coin tick flourish
+    for (let j=0;j<8;j++) setTimeout(()=> casinoPlayTick && casinoPlayTick(), 30*j);
+  } catch {}
+}
+
+// Burst from the win counter position after closing the bonus
+function counterMoneyExplode(){
+  try {
+    const cab = document.querySelector('.slots .cabinet');
+    const ctr = document.querySelector('.slots .cabinet .win-counter');
+    if (!cab || !ctr) return;
+    const rcCab = cab.getBoundingClientRect();
+    const rc = ctr.getBoundingClientRect();
+    const startX = rc.left - rcCab.left + rc.width/2;
+    const startY = rc.top - rcCab.top + rc.height/2;
+    const n = 18;
+    for (let i=0;i<n;i++){
+      const el = document.createElement('div');
+      el.textContent = Math.random()<0.5 ? '🪙' : '💸';
+      el.style.position='absolute'; el.style.pointerEvents='none';
+      el.style.left = startX + 'px'; el.style.top = startY + 'px';
+      el.style.fontSize = (18 + Math.random()*10) + 'px';
+      el.style.opacity = '0.98';
+      cab.appendChild(el);
+      const ang = Math.random()*Math.PI*2;
+      const dist = 90 + Math.random()*120;
+      const dx = Math.cos(ang)*dist;
+      const dy = Math.sin(ang)*dist;
+      const rot = (Math.random()*2-1)*180;
+      const dur = 700 + Math.random()*500;
+      const start = performance.now();
+      const step = (t)=>{
+        const p = Math.min(1, (t-start)/dur);
+        const e = 1 - Math.pow(1-p, 2); // ease-out
+        el.style.transform = `translate(${dx*e}px, ${dy*e}px) rotate(${rot*e}deg)`;
+        el.style.opacity = String(0.98*(1-p));
+        if (p<1) requestAnimationFrame(step); else el.remove();
+      };
+      requestAnimationFrame(step);
+      // light coin ticks
+      setTimeout(()=> { try { casinoPlayTick(); } catch {} }, i*25);
+    }
+  } catch {}
+}
+
+// Brief pre-bonus announcement: glow + sparkles + sound
+function bonusIntro(next){
+  try {
+    const cab = document.querySelector('.slots .cabinet'); if (!cab) { next && next(); return; }
+    // overlay glow
+    const glow = document.createElement('div'); glow.className='bonus-flash'; cab.appendChild(glow);
+    // BIG BONUS banner
+    const banner = document.createElement('div'); banner.className='bonus-banner'; banner.textContent='BONUS!'; cab.appendChild(banner);
+    // sparkles
+    for (let i=0;i<10;i++){
+      const s = document.createElement('div'); s.textContent = Math.random()<0.5 ? '✨' : '💰';
+      s.style.position='absolute'; s.style.pointerEvents='none'; s.style.left=(20+Math.random()*60)+'%'; s.style.top='55%'; s.style.fontSize=(18+Math.random()*10)+'px'; s.style.opacity='0.95';
+      cab.appendChild(s);
+      const dx=(Math.random()*2-1)*50, dy=-(40+Math.random()*40), rot=(Math.random()*2-1)*60, dur=520+Math.random()*180, start=performance.now();
+      const step=(t)=>{ const p=Math.min(1,(t-start)/dur); const e=p*p*(3-2*p); s.style.transform=`translate(${dx*e}px, ${dy*e}px) rotate(${rot*e}deg)`; s.style.opacity=String(0.95*(1-p)); if(p<1) requestAnimationFrame(step); else s.remove(); };
+      requestAnimationFrame(step);
+    }
+    // sound — bigger anticipation
+    try { casinoPlayAward(); for(let j=0;j<10;j++) setTimeout(()=> casinoPlayTick(), 28*j); } catch {}
+    setTimeout(()=>{ glow.remove(); banner.remove(); next && next(); }, 1200);
+  } catch { next && next(); }
 }
 
 // Keep the left timeline max-height aligned to the height of the right panels
