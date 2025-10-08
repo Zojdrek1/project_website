@@ -610,6 +610,32 @@ function renderDevPanel() {
       el('button', { class: 'btn', text: '+5 Levels', onclick: () => cheatLevels(5) }) ],
   ]);
 
+  addSection('race', 'Race', '🏁', [
+    [
+      el('button', {
+        class: 'btn bad',
+        text: 'Force Part Failure (Next Race)',
+        onclick: () => {
+          window.__icsForcePartFailure = true;
+          showToast('Next race will force a part failure!', 'warn');
+        }
+      }),
+      el('button', {
+        class: 'btn good',
+        text: 'Repair All Cars',
+        onclick: () => {
+          if (!state.garage) return;
+          state.garage.forEach(car => {
+            Object.keys(car.parts).forEach(k => car.parts[k] = 100);
+            car.failed = false;
+          });
+          showToast('All cars fully repaired!', 'good');
+          if (typeof window.render === 'function') window.render();
+        }
+      })
+    ]
+  ]);
+
   addSection('heat', 'Heat', '🔥', [
     [ el('button', { class: 'btn warn', text: '+10 Heat', onclick: () => addHeat(10, 'Dev heat') }),
       el('button', { class: 'btn', text: 'Clear Heat', onclick: () => addHeat(-100, 'Dev clear') }) ],

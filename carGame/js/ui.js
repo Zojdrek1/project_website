@@ -60,6 +60,16 @@ export function showToast(message, type = 'info', actions = null, timeoutMs = 42
   const cont = document.getElementById('toasts');
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
+  // X button for instant close
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'toast-x';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.onclick = (e) => {
+    e.stopPropagation();
+    toast.classList.add('hide');
+    setTimeout(() => toast.remove(), 240);
+  };
+  toast.appendChild(closeBtn);
   const text = document.createElement('div');
   text.textContent = message;
   toast.appendChild(text);
@@ -84,8 +94,10 @@ export function showToast(message, type = 'info', actions = null, timeoutMs = 42
   requestAnimationFrame(() => toast.classList.add('show'));
   if (!actions || !actions.length) {
     setTimeout(() => {
-      toast.classList.add('hide');
-      setTimeout(() => toast.remove(), 240);
+      if (!toast.classList.contains('hide')) {
+        toast.classList.add('hide');
+        setTimeout(() => toast.remove(), 240);
+      }
     }, timeoutMs);
   }
 }
@@ -171,6 +183,37 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   devBtn2.textContent = (state.ui && state.ui.showDev) ? 'Hide Dev Tools' : 'Show Dev Tools';
   devBtn2.onclick = () => { onToggleDev(); onHideOptions(); };
   pop.appendChild(devBtn2);
+
+  // --- Dev Tools Panel ---
+  if (state.ui && state.ui.showDev) {
+    const devPanel = document.createElement('div');
+    devPanel.className = 'dev-panel';
+    devPanel.style.margin = '16px 0 0 0';
+    // Force part failure in next race
+    const failBtn = document.createElement('button');
+    failBtn.className = 'btn bad';
+    failBtn.textContent = 'Force Part Failure (Next Race)';
+    failBtn.onclick = () => {
+      window.__icsForcePartFailure = true;
+      showToast('Next race will force a part failure!', 'warn');
+    };
+    devPanel.appendChild(failBtn);
+    // Instant fix all cars
+    const fixBtn = document.createElement('button');
+    fixBtn.className = 'btn good';
+    fixBtn.textContent = 'Fix All Cars Instantly';
+    fixBtn.onclick = () => {
+      if (!window.state || !Array.isArray(window.state.garage)) return;
+      for (const car of window.state.garage) {
+        for (const k of Object.keys(car.parts||{})) car.parts[k] = 100;
+        car.failed = false;
+      }
+      showToast('All cars fully repaired!', 'good');
+      if (typeof window.render === 'function') window.render();
+    };
+    devPanel.appendChild(fixBtn);
+    pop.appendChild(devPanel);
+  }
 
   right.appendChild(pop);
   nav.appendChild(right);
@@ -658,7 +701,8 @@ export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt })
       carSwitcher.appendChild(el('span', { class: 'car-display subtle', text: 'No cars available' }));
     }
 
-    const card = el('div', { class: 'panel event-card' + (!suitableCar ? ' disabled' : '') }, [
+    const isDisabled = !suitableCar;
+    const card = el('div', { class: 'panel event-card' + (isDisabled ? ' disabled' : '') }, [
       el('div', { class: `event-card-track track-${event.trackType}` }, [
         el('h4', { text: event.name })
       ]),
@@ -677,8 +721,11 @@ export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt })
               if (!selectedCar) return;
               const originalGarageIndex = state.garage.findIndex(c => c.id === selectedCar.id);
               if (originalGarageIndex !== -1) onRaceCar(originalGarageIndex, event.id);
-          }, disabled: !suitableCar })
-        ])
+          }, disabled: isDisabled })
+        ]),
+        isDisabled ? el('div', { class: 'event-locked-msg' }, [
+          '🔒 No eligible cars available for this event.'
+        ]) : null
       ])
     ]);
     grid.appendChild(card);
@@ -686,7 +733,7 @@ export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt })
   view.appendChild(grid);
 }
 
-export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar }) {
+export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar, isSellConfirm, onSellClickById }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
   const panel = el('div', { class: 'panel' }, [
@@ -765,6 +812,13 @@ export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureMod
               const profit = (car.valuation ?? 0) - (car.boughtPrice ?? 0);
               const cls = profit >= 0 ? 'tag ok' : 'tag bad';
               return el('span', { class: cls, ['data-own-pl']: car.id, text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` });
+            })(),
+            (() => {
+              const sellBtn = el('button', { class: 'btn danger', text: (typeof isSellConfirm === 'function' && isSellConfirm(car.id)) ? 'Are you sure?' : 'Sell' });
+              if (typeof onSellClickById === 'function') {
+                sellBtn.onclick = () => onSellClickById(car.id, sellBtn);
+              }
+              return sellBtn;
             })(),
           ]),
           (() => {

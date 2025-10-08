@@ -25,12 +25,18 @@ export function simulateRaceOutcome(car, opponentPerf) {
   // Failure risk baseline even at 100%, increases with weak parts
   let failRisk = 0.02;
   let failedPart = null;
-  for (const p of PARTS) {
-    const cond = car.parts[p.key] ?? 100;
-    if (cond < 60) failRisk += (60 - cond) / 100 * 0.15;
-    if (!failedPart && cond < 60 && chance((60 - cond) / 100 * 0.3)) failedPart = p.key;
+  // Dev tool: force part failure
+  if (typeof window !== 'undefined' && window.__icsForcePartFailure) {
+    window.__icsForcePartFailure = false;
+    failedPart = sample(PARTS).key;
+  } else {
+    for (const p of PARTS) {
+      const cond = car.parts[p.key] ?? 100;
+      if (cond < 60) failRisk += (60 - cond) / 100 * 0.15;
+      if (!failedPart && cond < 60 && chance((60 - cond) / 100 * 0.3)) failedPart = p.key;
+    }
+    if (!failedPart && chance(failRisk)) failedPart = sample(PARTS).key;
   }
-  if (!failedPart && chance(failRisk)) failedPart = sample(PARTS).key;
   const win = !failedPart && chance(winChance);
   // House edge on odds: expected value slightly negative
   const margin = 0.12;
