@@ -1,13 +1,18 @@
 // --- Utility helpers ---
 import { PARTS, MODELS } from './js/data.js';
 import { TUNING_OPTIONS, nextTuningStage, tuningStage, tuningBonus, clampTuningLevel } from './js/tuning.js';
-import { state, setState, defaultState, saveState, migrateState, getCurrentSlot, loadSlotIntoState, createNewStateForSlot } from './js/state.js';
+import { state, setState, defaultState, saveState, migrateState, getCurrentSlot, loadSlotIntoState, createNewStateForSlot, SAVE_SLOTS } from './js/state.js';
 import { showMainMenu, hideMainMenu } from './js/menu.js';
 import { canRace, simulateRaceOutcome, RACE_EVENTS, LEAGUE_RANKS } from './js/race.js';
 import { ensureModelTrends, refreshIllegalMarket, refreshPartsPrices, tickPartsPricesCore, tickIllegalMarketCore, PRICE_HISTORY_MAX, PARTS_TICK_MS, ILLEGAL_TICK_MS, ILLEGAL_LISTING_REFRESH_MS } from './js/economy.js';
 import { showRaceAnimation } from './js/raceAnimation.js';
-import { el, ensureToasts, showToast, renderNavUI, renderCenterNavUI, drawSparkline, renderMarketView, updateMarketPricesAndTrendsUI, renderMarketListingsSection, renderMarketTrendsSection, renderMarketOwnedTrendsSection, renderMarketAllTrendsSection, renderGarageFullView, renderGarageCarsSection, updatePartsPricesUI as updatePartsPricesUI_M, renderRacesView, layoutCarBreakdown, getBodyStyle, getSilhouettePath } from './js/ui.js';
+import { el, ensureToasts, showToast, renderNavUI, renderCenterNavUI, drawSparkline, renderDashboardView, renderMarketView, updateMarketPricesAndTrendsUI, renderMarketListingsSection, renderMarketTrendsSection, renderMarketOwnedTrendsSection, renderMarketAllTrendsSection, renderGarageFullView, renderGarageCarsSection, updatePartsPricesUI as updatePartsPricesUI_M, renderRacesView, layoutCarBreakdown, getBodyStyle, getSilhouettePath } from './js/ui.js';
+import { initTutorial, startTutorial, isTutorialActive } from './js/tutorial.js';
 import { initCasino } from './js/casino.js';
+import { ACHIEVEMENT_DEFS, evaluateAchievements, achievementProgressSummary } from './js/achievements.js';
+import { getGarageTierConfig, garageExtraSlotCost, canPurchaseExtraSlot, canUnlockNextTier, COSMETIC_PACKAGES, getCosmeticById, CREW_INVESTMENTS, getCrewInvestment } from './js/progression.js';
+import { LEADERBOARD_CATEGORIES, recordLeaderboardEntry, getLeaderboardSnapshot } from './js/leaderboard.js';
+import { renderLeaderboardView } from './js/leaderboardView.js';
 let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 function currencySymbol() {
   try {
@@ -26,6 +31,134 @@ const CURRENCY_RATES = { USD: 1, GBP: 0.79, EUR: 0.93, JPY: 155, PLN: 4.0 };
 const getRate = () => CURRENCY_RATES[(state && state.currency) || 'USD'] || 1;
 
 const formatMoney = (value) => fmt.format(value);
+
+function ensureCarExtras(car) {
+  if (!car) return;
+  if (!Array.isArray(car.cosmetics)) car.cosmetics = [];
+}
+
+function cosmeticMultiplier(car) {
+  if (!car || !Array.isArray(car.cosmetics) || !car.cosmetics.length) return 1;
+  let bonus = 0;
+  for (const id of car.cosmetics) {
+    const pkg = getCosmeticById(id);
+    if (pkg && typeof pkg.resaleBonus === 'number') bonus += Math.max(0, pkg.resaleBonus);
+  }
+  return Math.max(1, 1 + bonus);
+}
+
+function applyCosmeticValue(baseValue, car) {
+  return Math.round(Math.max(0, baseValue) * cosmeticMultiplier(car));
+}
+
+const generateProfileId = () => {
+  try { return crypto.randomUUID(); } catch {}
+  return `profile-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+function sanitizeAlias(name) {
+  if (typeof name !== 'string') return 'Crew Chief';
+  const cleaned = name.replace(/\s+/g, ' ').trim().slice(0, 24);
+  return cleaned || 'Crew Chief';
+}
+
+function ensureProfile() {
+  if (!state.profile || typeof state.profile !== 'object') {
+    state.profile = { id: generateProfileId(), alias: 'Crew Chief', shareLeaderboard: false };
+  }
+  if (typeof state.profile.id !== 'string' || !state.profile.id) state.profile.id = generateProfileId();
+  state.profile.alias = sanitizeAlias(state.profile.alias);
+  if (typeof state.profile.shareLeaderboard !== 'boolean') state.profile.shareLeaderboard = false;
+  return state.profile;
+}
+
+function achievementsForDisplay() {
+  const unlockedMap = (state.achievements && state.achievements.unlocked) || {};
+  return ACHIEVEMENT_DEFS.map(def => ({
+    id: def.id,
+    label: def.label,
+    description: def.description,
+    icon: def.icon || '🏅',
+    unlocked: !!unlockedMap[def.id],
+    unlockedAt: unlockedMap[def.id]?.ts || null,
+  }));
+}
+
+function triggerAchievements(trigger, context = {}) {
+  const unlockedList = evaluateAchievements({ state, trigger, context });
+  if (unlockedList.length) {
+    unlockedList.forEach(def => {
+      const icon = def.icon || '🏅';
+      showToast(`${icon} Achievement unlocked — ${def.label}`, 'good');
+      pushLog(`Achievement unlocked: ${def.label}.`);
+    });
+    saveState();
+    scheduleRender();
+  }
+}
+
+function setProfileAlias(name) {
+  const profile = ensureProfile();
+  const alias = sanitizeAlias(name);
+  if (profile.alias === alias) return;
+  profile.alias = alias;
+  saveState();
+  showToast(`Alias set to ${alias}.`, 'info');
+  renderNav();
+  if (profile.shareLeaderboard) {
+    const metrics = computeDashboardMetrics();
+    syncLeaderboards(metrics);
+  }
+  scheduleRender();
+}
+
+function setLeaderboardSharing(enabled) {
+  const profile = ensureProfile();
+  const next = !!enabled;
+  if (profile.shareLeaderboard === next) return;
+  profile.shareLeaderboard = next;
+  saveState();
+  showToast(next ? 'Leaderboard sharing enabled. Best scores are stored locally.' : 'Leaderboard sharing disabled.', next ? 'good' : 'info');
+  if (next) {
+    const metrics = computeDashboardMetrics();
+    syncLeaderboards(metrics);
+  }
+  scheduleRender();
+}
+
+function summarizeLeagueForLeaderboard() {
+  const league = ensureLeagueState();
+  const rankCount = LEAGUE_RANKS.length || 1;
+  const rankIndex = Math.max(0, Math.min(rankCount - 1, league.rank || 0));
+  const progress = Math.max(0, league.match || 0);
+  let value = (rankCount - rankIndex) * 100 + progress;
+  let rankName = LEAGUE_RANKS[rankIndex]?.name || 'Entry';
+  if (league.champion) {
+    value = 10000 + (league.season || 1) * 100;
+    rankName = 'Champion';
+  }
+  return {
+    value,
+    meta: {
+      rankName,
+      season: league.season || 1,
+      champion: !!league.champion,
+    },
+  };
+}
+
+function syncLeaderboards(metrics) {
+  const profile = ensureProfile();
+  if (profile.shareLeaderboard) {
+    const alias = profile.alias;
+    const profileId = profile.id;
+    recordLeaderboardEntry({ category: 'netWorth', alias, profileId, value: metrics.netWorth || 0, meta: { cash: metrics.money || 0 } });
+    recordLeaderboardEntry({ category: 'level', alias, profileId, value: state.level || 1 });
+    const leagueSummary = summarizeLeagueForLeaderboard();
+    recordLeaderboardEntry({ category: 'league', alias, profileId, value: leagueSummary.value, meta: leagueSummary.meta });
+  }
+  return getLeaderboardSnapshot(8);
+}
 
 const {
   setCasinoSession,
@@ -129,6 +262,24 @@ function ensureLeagueState() {
   if (typeof league.lossStreak !== 'number' || !isFinite(league.lossStreak) || league.lossStreak < 0) league.lossStreak = 0;
   if (!league.flash || typeof league.flash !== 'object') league.flash = null;
   return league;
+}
+
+function ensureStats() {
+  if (!state.stats || typeof state.stats !== 'object') state.stats = {};
+  const stats = state.stats;
+  if (!Array.isArray(stats.heatSamples)) stats.heatSamples = [];
+  if (!Array.isArray(stats.achievements)) stats.achievements = [];
+  if (!stats.bestCar) stats.bestCar = null;
+  if (!Array.isArray(stats.netWorthHistory)) stats.netWorthHistory = [];
+  return stats;
+}
+
+function recordHeatSample(value) {
+  const stats = ensureStats();
+  const samples = stats.heatSamples;
+  samples.push({ value: Math.max(0, Math.min(100, Math.round(value || 0))), ts: Date.now() });
+  if (samples.length > 120) samples.splice(0, samples.length - 120);
+  return samples;
 }
 
 function setLeagueFlash(text, tone = 'info') {
@@ -305,6 +456,7 @@ function newCar(fromModel) {
     boughtPrice: null,
     tuning: {},
     tuningBonus: 0,
+    cosmetics: [],
   };
   ensureCarTuning(car);
   return car;
@@ -368,11 +520,12 @@ function modelId(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+
 function advanceDay() {
   state.day += 1;
   refreshIllegalMarket();
   refreshPartsPrices();
-  pushLog(`Day ${state.day}: markets refreshed.`);
+  pushLog('Markets refreshed.');
   refreshMarketUI();
   refreshGarageUI();
   saveState();
@@ -384,12 +537,16 @@ function addMoney(amount, reason = '') {
   if (reason) pushLog(`${amount >= 0 ? '+' : ''}${fmt.format(amount)} — ${reason}`);
   updateMoney();
   saveState();
+  triggerAchievements('money');
 }
 function pushLog(msg) {
   state.log.unshift(msg);
   if (state.log.length > 60) state.log.pop();
-  const el = document.getElementById('activityLog');
-  if (el) renderLog(el);
+  const view = document.getElementById('view');
+  if (view && view.getAttribute('data-current-view') === 'dashboard') {
+    const feed = view.querySelector('[data-activity-log]');
+    if (feed) renderLog(feed);
+  }
   showToast(msg, 'info');
 }
 
@@ -403,8 +560,15 @@ function buyCar(idx) {
     ]);
     return;
   }
-  if (state.money < car.price) { showToast('Not enough cash to buy this car.', 'warn'); return; }
-  addMoney(-car.price, `Bought ${car.model}`);
+  const discountActive = state.crew && state.crew.contrabandNetwork;
+  const discountRate = discountActive ? 0.12 : 0;
+  const discount = Math.round(car.price * discountRate);
+  const cost = Math.max(0, car.price - discount);
+  if (state.money < cost) { showToast('Not enough cash to buy this car.', 'warn'); return; }
+  addMoney(-cost, `Bought ${car.model}`);
+  if (discount > 0) {
+    pushLog(`Crew contacts shaved ${fmt.format(discount)} off ${car.model}.`);
+  }
   addHeat(1, 'Shady purchase');
   car.boughtPrice = car.price;
   // Initialize valuation tracking for owned cars
@@ -412,12 +576,14 @@ function buyCar(idx) {
   car.valuation = car.boughtPrice;
   car.valuationHistory = [car.boughtPrice];
   ensureCarTuning(car);
+  ensureCarExtras(car);
   state.garage.push(car);
   state.illegalMarket.splice(idx, 1);
   addXP(15, `Acquired ${car.model}`);
   saveState();
   refreshMarketUI();
   refreshGarageUI();
+  triggerAchievements('garageSize');
 }
 
 function sellCar(garageIndex) {
@@ -434,11 +600,77 @@ function sellCar(garageIndex) {
   ]);
 }
 
-function computeSellPrice(car) {
+function baseValuation(car, { randomize = true } = {}) {
   const avgCond = PARTS.reduce((a, p) => a + (car.parts[p.key] ?? 100), 0) / PARTS.length;
   const condFactor = 0.5 + (avgCond / 100) * 0.5;
-  const fallback = Math.round(car.basePrice * condFactor * rand(0.9, 1.1));
+  const variance = randomize ? rand(0.9, 1.1) : 1;
+  const fallback = Math.round(car.basePrice * condFactor * variance);
   return Math.round(car.valuation ?? fallback);
+}
+
+function computeSellPrice(car) {
+  const base = baseValuation(car, { randomize: true });
+  return applyCosmeticValue(base, car);
+}
+
+function computeDashboardMetrics() {
+  const stats = ensureStats();
+  const money = Math.max(0, Math.round(state.money || 0));
+  const garage = Array.isArray(state.garage) ? state.garage : [];
+  let garageValue = 0;
+  let totalCondition = 0;
+  let bestCar = null;
+  for (const car of garage) {
+    const baseValue = Math.max(0, baseValuation(car, { randomize: false }));
+    const valuation = applyCosmeticValue(baseValue, car);
+    const bought = Math.max(0, Math.round(car.boughtPrice ?? valuation));
+    const profit = valuation - bought;
+    garageValue += valuation;
+    totalCondition += avgCondition(car);
+    if (!bestCar || profit > bestCar.profit) {
+      bestCar = {
+        model: car.model,
+        profit,
+        valuation,
+        perf: car.perf,
+        condition: Math.round(avgCondition(car)),
+      };
+    }
+  }
+  const netWorth = money + garageValue;
+  const avgConditionVal = garage.length ? Math.round(totalCondition / garage.length) : 0;
+
+  const heatSamples = stats.heatSamples;
+  const avgHeat = heatSamples.length
+    ? Math.round(heatSamples.reduce((acc, item) => acc + (item.value || 0), 0) / heatSamples.length)
+    : Math.round(state.heat || 0);
+  const recentHeat = heatSamples.slice(-20);
+
+  stats.netWorthHistory.push({ value: netWorth, ts: Date.now() });
+  if (stats.netWorthHistory.length > 120) stats.netWorthHistory.splice(0, stats.netWorthHistory.length - 120);
+
+  const league = ensureLeagueState();
+  const rankDef = LEAGUE_RANKS[league.rank] || null;
+
+  return {
+    money,
+    garageValue,
+    netWorth,
+    avgCondition: avgConditionVal,
+    avgHeat,
+    heatSamples: recentHeat,
+    netWorthHistory: stats.netWorthHistory.slice(-40),
+    bestCar,
+    carsCount: garage.length,
+    league: {
+      rank: league.rank,
+      rankName: rankDef ? rankDef.name : 'N/A',
+      season: league.season,
+      match: league.match,
+      matchesTotal: rankDef ? rankDef.opponents.length : 0,
+      champion: !!league.champion,
+    },
+  };
 }
 
 function finalizeSell(garageIndex, price) {
@@ -453,6 +685,42 @@ function finalizeSell(garageIndex, price) {
   saveState();
   refreshGarageUI();
   refreshMarketUI();
+  triggerAchievements('garageSize');
+}
+
+function purchaseCosmetic(garageIndex, cosmeticId) {
+  const car = state.garage[garageIndex];
+  if (!car) return;
+  ensureCarExtras(car);
+  const pkg = getCosmeticById(cosmeticId);
+  if (!pkg) { showToast('Cosmetic package unavailable.', 'warn'); return; }
+  if (car.cosmetics.includes(pkg.id)) { showToast('Upgrade already installed.', 'info'); return; }
+  const cost = Math.round((pkg.cost || 0) * getRate());
+  if (state.money < cost) { showToast(`Need ${fmt.format(cost)} for ${pkg.label}.`, 'warn'); return; }
+  addMoney(-cost, `${pkg.label} for ${car.model}`);
+  car.cosmetics.push(pkg.id);
+  if (Array.isArray(car.valuationHistory)) {
+    const base = baseValuation(car, { randomize: false });
+    car.valuationHistory.push(applyCosmeticValue(base, car));
+    if (car.valuationHistory.length > PRICE_HISTORY_MAX) car.valuationHistory.shift();
+  }
+  pushLog(`${pkg.label} applied to ${car.model}.`);
+  saveState();
+  refreshGarageUI();
+}
+
+function investCrew(key) {
+  const perk = getCrewInvestment(key);
+  if (!perk) { showToast('Crew investment not found.', 'warn'); return; }
+  if (state.crew && state.crew[key]) { showToast('Crew already hired for this role.', 'info'); return; }
+  const cost = Math.round((perk.cost || 0) * getRate());
+  if (state.money < cost) { showToast(`Need ${fmt.format(cost)} for ${perk.label}.`, 'warn'); return; }
+  addMoney(-cost, perk.label);
+  if (!state.crew || typeof state.crew !== 'object') state.crew = {};
+  state.crew[key] = true;
+  pushLog(`${perk.label} added to your crew.`);
+  saveState();
+  refreshGarageUI();
 }
 
 function sellCarById(id) {
@@ -679,6 +947,12 @@ function raceLeague(garageIndex) {
           if (rank.trophyXp) addXP(rank.trophyXp, `${rank.name} championship`);
           league.completedRanks.push(rankId);
         }
+        triggerAchievements('leagueWin', {
+          rankCompleted: true,
+          rankId,
+          rankIndex,
+          lastRank: league.rank >= LEAGUE_RANKS.length - 1,
+        });
         if (league.rank < LEAGUE_RANKS.length - 1) {
           league.rank += 1;
           league.match = 0;
@@ -690,6 +964,7 @@ function raceLeague(garageIndex) {
           league.match = rank.opponents.length;
           showToast('You are the Midnight League Champion!', 'good');
           setLeagueFlash('Midnight League complete! You hold the crown.', 'good');
+          triggerAchievements('leagueChampion', { champion: true });
         }
       }
     } else {
@@ -712,7 +987,9 @@ function raceLeague(garageIndex) {
 function repairCar(garageIndex, partKey, source, { skipRefresh = false } = {}) {
   const car = state.garage[garageIndex];
   if (!car) return;
-  const price = state.partsPrices[source][partKey];
+  const basePrice = state.partsPrices[source][partKey];
+  let price = basePrice;
+  if (state.crew && state.crew.pitCrew) price = Math.round(basePrice * 0.85);
   if (state.money < price) { showToast('Not enough cash for this repair.', 'warn'); return; }
   const before = car.parts[partKey] ?? 100;
   addMoney(-price, `Serviced ${partKey} on ${car.model} (${source})`);
@@ -755,13 +1032,14 @@ function repairCar(garageIndex, partKey, source, { skipRefresh = false } = {}) {
 
 // --- Rendering ---
 const NAV = [
+  { key: 'dashboard', label: 'Summary', icon: 'dashboard' },
   { key: 'market', label: 'Illegal Market', icon: 'cart' },
   { key: 'garage', label: 'Garage', icon: 'garage' },
   { key: 'street_races', label: 'Street Races', icon: 'flag' },
   { key: 'league', label: 'League Racing', icon: 'trophy' },
   { key: 'casino', label: 'Casino', icon: 'casino' },
 ];
-let currentView = 'market';
+let currentView = 'dashboard';
 
 function setView(key) { currentView = key; render(); }
 
@@ -788,13 +1066,19 @@ function updateHeatUI() {
 
 function addHeat(amount, reason = '') {
   const prev = state.heat || 0;
-  state.heat = Math.max(0, Math.min(100, Math.round(prev + amount)));
-  if (reason) pushLog(`${amount >= 0 ? '+' : ''}${Math.round(amount)} Heat — ${reason}`);
+  let delta = Math.round(amount);
+  if (state.crew && state.crew.heatSuppression && delta > 0) {
+    delta = Math.round(delta * 0.85);
+  }
+  state.heat = Math.max(0, Math.min(100, Math.round(prev + delta)));
+  if (reason) pushLog(`${delta >= 0 ? '+' : ''}${Math.round(delta)} Heat — ${reason}`);
   updateHeatUI();
+  recordHeatSample(state.heat);
   saveState();
 }
 
 function renderNav() {
+  const profile = ensureProfile();
   renderNavUI({
     state,
     currentView,
@@ -813,6 +1097,8 @@ function renderNav() {
         },
       }
     ]),
+    onStartTutorial: () => startTutorial({ force: true }),
+    tutorialActive: isTutorialActive(),
     currencyCode: state.currency || 'USD',
     currencies: [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']],
     onSetCurrency: (code) => setCurrency(code),
@@ -820,6 +1106,12 @@ function renderNav() {
     onSetSound: (enabled) => { ensureCasinoUI(); state.ui.casino.sound = !!enabled; saveState(); if (enabled) { casinoEnsureAudio(); casinoApplyVolume(); } },
     onSetVolume: (vol) => { ensureCasinoUI(); state.ui.casino.volume = Math.max(0, Math.min(1, vol)); casinoApplyVolume(); saveState(); },
     onTestSound: () => { ensureCasinoUI(); casinoEnsureAudio(); casinoPlayTest(); },
+    onExportSave: () => exportSaveToFile(),
+    onImportSave: () => importSaveFromFile(),
+    profileAlias: profile.alias,
+    shareLeaderboard: !!profile.shareLeaderboard,
+    onSetAlias: (alias) => setProfileAlias(alias),
+    onToggleShare: (enabled) => setLeaderboardSharing(enabled),
   });
   // Render center nav back in its original place
   renderCenterNavUI({ state, currentView, navItems: NAV, onSetView: (key) => setView(key) });
@@ -838,6 +1130,102 @@ function hideOptionsMenu() {
   if (state.ui) state.ui.showOptions = false;
   const pop = document.getElementById('optionsPop');
   if (pop) pop.classList.remove('open');
+}
+
+function cloneForTransfer(data) {
+  try {
+    return typeof structuredClone === 'function' ? structuredClone(data) : JSON.parse(JSON.stringify(data));
+  } catch {
+    return JSON.parse(JSON.stringify(data));
+  }
+}
+
+function exportSaveToFile() {
+  try {
+    const slot = typeof getCurrentSlot() === 'number' ? getCurrentSlot() : 0;
+    saveState(slot);
+    const snapshot = cloneForTransfer(state);
+    const payload = {
+      schema: 'ics-save',
+      version: 1,
+      slot,
+      exportedAt: new Date().toISOString(),
+      state: snapshot,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const suffix = new Date().toISOString().replace(/[:.]/g, '-');
+    const slotLabel = (slot ?? 0) + 1;
+    a.href = url;
+    a.download = `ics-save-slot${slotLabel}-${suffix}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`Save slot ${slotLabel} exported.`, 'good');
+  } catch (err) {
+    console.error('Export failed', err);
+    showToast('Export failed. Check console for details.', 'warn');
+  }
+}
+
+function importSaveFromFile() {
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.accept = 'application/json,.json';
+  picker.style.display = 'none';
+  picker.onchange = async (event) => {
+    const file = event.target && event.target.files ? event.target.files[0] : null;
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const payload = parsed && typeof parsed === 'object' && parsed.state ? parsed : { state: parsed };
+      if (!payload.state || typeof payload.state !== 'object') throw new Error('Invalid save payload');
+      const slot = (typeof payload.slot === 'number' && payload.slot >= 0 && payload.slot < SAVE_SLOTS)
+        ? Math.floor(payload.slot)
+        : (typeof getCurrentSlot() === 'number' ? getCurrentSlot() : 0);
+      const importedState = payload.state;
+      const day = typeof importedState.day === 'number' ? Math.max(1, Math.round(importedState.day)) : 1;
+      const cash = typeof importedState.money === 'number' ? importedState.money : 0;
+      const currency = typeof importedState.currency === 'string' ? importedState.currency : (state.currency || 'USD');
+      let importFmt = fmt;
+      try { importFmt = new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }); } catch {}
+      const slotLabel = slot + 1;
+      const summary = `${importFmt.format(cash)}`;
+      const message = `Import ${summary} into slot ${slotLabel}?`;
+      showToast(message, 'warn', [
+        { label: 'Cancel', action: () => {} },
+        { label: 'Import', action: () => applyImportedState(slot, importedState, file.name) }
+      ], 9000);
+    } catch (err) {
+      console.error('Import failed', err);
+      showToast('Import failed. This file is not a valid ICS save.', 'warn');
+    } finally {
+      picker.value = '';
+    }
+  };
+  document.body.appendChild(picker);
+  picker.click();
+  setTimeout(() => {
+    if (picker.parentNode) picker.parentNode.removeChild(picker);
+  }, 0);
+}
+
+async function applyImportedState(slotIndex, snapshot, sourceLabel = 'file') {
+  try {
+    const cloned = cloneForTransfer(snapshot);
+    setState(cloned, slotIndex);
+    saveState(slotIndex);
+    gameBooted = false;
+    await initializeGame({ skipLoader: true });
+    showToast(`Imported save from ${sourceLabel} into slot ${slotIndex + 1}.`, 'good');
+  } catch (err) {
+    console.error('Failed to apply imported save', err);
+    showToast('Import failed. Could not apply save data.', 'warn');
+  }
 }
 
 // (Removed duplicate renderNav definition)
@@ -1212,7 +1600,54 @@ function render() {
   if (optionsCog) optionsCog.onclick = () => showOptionsModal();
   const view = document.getElementById('view');
   if (!view) return;
-  if (currentView === 'market') {
+  view.removeAttribute('data-tour-id');
+  view.setAttribute('data-current-view', currentView);
+  const achievementsData = achievementsForDisplay();
+  const achievementsSummary = achievementProgressSummary(state);
+  const profile = ensureProfile();
+  const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
+  const tierConfig = getGarageTierConfig(tierIndex);
+  const nextTierData = nextGarageTierCost();
+  const extraSlots = Math.max(0, Math.round(state.garagesPurchased || 0));
+  const canBuySlot = canPurchaseExtraSlot({ tierIndex, slotsPurchased: extraSlots });
+  const cosmeticOptions = COSMETIC_PACKAGES.map(pkg => ({
+    id: pkg.id,
+    label: pkg.label,
+    description: pkg.description,
+    icon: pkg.icon,
+    cost: Math.round((pkg.cost || 0) * getRate()),
+  }));
+  const crewOptions = CREW_INVESTMENTS.map(item => {
+    const owned = state.crew && !!state.crew[item.key];
+    const cost = Math.round((item.cost || 0) * getRate());
+    return {
+      key: item.key,
+      label: item.label,
+      description: item.description,
+      icon: item.icon,
+      cost,
+      owned,
+      disabled: owned,
+      afford: state.money >= cost,
+    };
+  });
+  if (currentView === 'dashboard') {
+    const metrics = computeDashboardMetrics();
+    if (profile.shareLeaderboard) syncLeaderboards(metrics);
+    renderDashboardView({
+      state,
+      metrics,
+      fmt,
+      drawSparkline,
+      xpInfo: {
+        level: state.level,
+        xp: state.xp,
+        needed: xpNeeded(),
+      },
+      achievements: achievementsData,
+      achievementSummary: achievementsSummary,
+    });
+  } else if (currentView === 'market') {
     if (!state.illegalMarket.length) { refreshIllegalMarket(); saveState(); }
     renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar: handleMarketBuy, isSellConfirm, onSellClickById });
   } else if (currentView === 'garage') {
@@ -1234,6 +1669,24 @@ function render() {
       nextGarageCost,
       onBuyGarageSlot: () => buyGarageSlot(),
       saveState: () => saveState(),
+      achievements: achievementsData,
+      garageTierInfo: {
+        index: tierIndex,
+        label: tierConfig.label,
+        description: tierConfig.description,
+        baseSlots: tierConfig.baseSlots,
+        extraSlots,
+        maxExtraSlots: tierConfig.maxExtraSlots,
+        canUpgrade: canUnlockNextTier(tierIndex),
+        nextTier: nextTierData,
+        canBuySlot,
+        nextSlotCost: nextGarageCost(),
+      },
+      onUpgradeTier: () => upgradeGarageTier(),
+      onBuyCosmetic: (idx, cosmeticId) => purchaseCosmetic(idx, cosmeticId),
+      cosmeticPackages: cosmeticOptions,
+      crewInvestments: crewOptions,
+      onInvestCrew: (key) => investCrew(key),
     });
   } else if (currentView === 'street_races') {
     renderRacesView({
@@ -1257,6 +1710,15 @@ function render() {
       onLeagueRace: (garageIndex) => raceLeague(garageIndex),
       onLeagueReset: () => startLeagueNewSeason(),
       onDismissLeagueFlash: () => clearLeagueFlash(),
+    });
+  } else if (currentView === 'leaderboard') {
+    const boards = getLeaderboardSnapshot(20);
+    renderLeaderboardView({
+      state,
+      fmt,
+      leaderboards: boards,
+      profileId: profile.id,
+      alias: profile.alias,
     });
   } else if (currentView === 'casino') {
     renderCasino();
@@ -1346,8 +1808,21 @@ async function initializeGame({ skipLoader = false } = {}) {
   if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
   ensureModelTrends();
   ensureLeagueState();
+  ensureStats();
+  initTutorial({ state, setView: (viewKey) => setView(viewKey), saveState });
+  const tutorialState = state.ui?.tutorial;
+  if (tutorialState && !tutorialState.completed && !tutorialState.dismissedAt) {
+    tutorialState.dismissedAt = Date.now();
+    saveState();
+    showToast('Want a quick tour of ICS?', 'info', [
+      { label: 'Later', action: () => {} },
+      { label: 'Start Guide', action: () => startTutorial({ force: true }) },
+    ], 6200);
+  }
   state.illegalMarket.forEach(ensureCarTuning);
-  state.garage.forEach(ensureCarTuning);
+  state.illegalMarket.forEach(ensureCarExtras);
+  state.garage.forEach(car => { ensureCarTuning(car); ensureCarExtras(car); });
+  recordHeatSample(state.heat || 0);
   try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
   startPartsTicker();
   startIllegalTicker();
@@ -1363,22 +1838,84 @@ async function initializeGame({ skipLoader = false } = {}) {
 
 // Toast helpers moved to ui.js
 // --- Storage (garage capacity) ---
-function garageCapacity() { return 1 + (state.garagesPurchased || 0); }
+function garageCapacity() {
+  const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
+  const tier = getGarageTierConfig(tierIndex);
+  const extras = Math.max(0, Math.round(state.garagesPurchased || 0));
+  return (tier.baseSlots || 1) + extras;
+}
 function nextGarageCost() {
-  const n = state.garagesPurchased || 0;
-  const raw = 15000 * Math.pow(1.5, n) * getRate();
+  const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
+  const extras = Math.max(0, Math.round(state.garagesPurchased || 0));
+  if (!canPurchaseExtraSlot({ tierIndex, slotsPurchased: extras })) return null;
+  const usd = garageExtraSlotCost({ tierIndex, slotsPurchased: extras });
+  const raw = usd * getRate();
   return Math.round(raw / 500) * 500;
 }
+function nextGarageTierCost() {
+  const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
+  if (!canUnlockNextTier(tierIndex)) return null;
+  const nextTierIndex = tierIndex + 1;
+  const tier = getGarageTierConfig(nextTierIndex);
+  const raw = (tier.unlockCost || 0) * getRate();
+  return {
+    cost: Math.round(raw / 500) * 500,
+    config: tier,
+    index: nextTierIndex,
+  };
+}
 function buyGarageSlot() {
+  const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
+  const extras = Math.max(0, Math.round(state.garagesPurchased || 0));
+  if (!canPurchaseExtraSlot({ tierIndex, slotsPurchased: extras })) {
+    if (canUnlockNextTier(tierIndex)) {
+      showToast('Current facility is full. Upgrade to the next garage tier for more bays.', 'info');
+    } else {
+      showToast('You already own the maximum storage bays available.', 'info');
+    }
+    return;
+  }
   const cost = nextGarageCost();
+  if (!cost) {
+    showToast('Unable to compute slot cost right now.', 'warn');
+    return;
+  }
   if (state.money < cost) {
     showToast(`Not enough cash. Need ${fmt.format(cost)}.`, 'warn');
     return;
   }
-  state.garagesPurchased = (state.garagesPurchased || 0) + 1;
+  state.garagesPurchased = extras + 1;
   addMoney(-cost, 'Bought additional garage slot');
   addXP(8, 'Property upgrade');
   showToast('Garage slot purchased.', 'good');
+  triggerAchievements('garageSize');
+  saveState();
+  updateMoney();
+  refreshGarageUI();
+}
+function upgradeGarageTier() {
+  const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
+  if (!canUnlockNextTier(tierIndex)) {
+    showToast('You already control the highest garage tier.', 'info');
+    return;
+  }
+  const nextTierIndex = tierIndex + 1;
+  const tier = getGarageTierConfig(nextTierIndex);
+  const raw = (tier.unlockCost || 0) * getRate();
+  const cost = Math.round(raw / 500) * 500;
+  if (state.money < cost) {
+    showToast(`Need ${fmt.format(cost)} to unlock ${tier.label}.`, 'warn');
+    return;
+  }
+  addMoney(-cost, `Upgraded garage to ${tier.label}`);
+  state.garageTier = nextTierIndex;
+  const extras = Math.max(0, Math.round(state.garagesPurchased || 0));
+  const maxExtras = Math.max(0, tier.maxExtraSlots || 0);
+  state.garagesPurchased = Math.min(extras, maxExtras);
+  addXP(20, `${tier.label} upgrade`);
+  showToast(`${tier.label} unlocked!`, 'good');
+  pushLog(`Garage upgraded to ${tier.label}.`);
+  triggerAchievements('garageTier', { tierIndex: nextTierIndex });
   saveState();
   updateMoney();
   refreshGarageUI();
@@ -1391,13 +1928,13 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('No save data in this slot yet.', 'warn');
         return false;
       }
-      currentView = 'market';
+      currentView = 'dashboard';
       hideMainMenu();
       return initializeGame();
     },
     onNewGame: (slotIndex, opts) => {
       createNewStateForSlot(slotIndex, opts);
-      currentView = 'market';
+      currentView = 'dashboard';
       hideMainMenu();
       return initializeGame();
     },

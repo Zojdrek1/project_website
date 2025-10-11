@@ -1,5 +1,6 @@
 // Main menu overlay with save slots and new-game options
 
+import { CURRENCY_RATES } from './economy.js';
 import { listSlotSummaries, getSlotSummary } from './state.js';
 import { el } from './ui.js';
 
@@ -16,7 +17,8 @@ let slotsContainer = null;
 let newGamePanel = null;
 let newGameForm = null;
 let newGameTitle = null;
-let newGameMoney = null;
+let newGameAlias = null;
+let newGameDifficulty = null;
 let newGameCurrency = null;
 let newGameError = null;
 let newGameStartBtn = null;
@@ -24,6 +26,31 @@ let optionsRef = null;
 let pendingSlot = null;
 let quickResumeBtn = null;
 let quickResumeNote = null;
+
+const updateStartingMoneyDisplay = () => {
+  if (!newGamePanel || !newGamePanel.classList.contains('open')) return;
+
+  const moneyDisplay = newGameForm.querySelector('#newGameStartingMoney');
+  if (!moneyDisplay) return;
+
+  const difficulty = newGameDifficulty ? newGameDifficulty.value : 'standard';
+  const currency = newGameCurrency ? newGameCurrency.value : 'USD';
+
+  const startingMoneyUSD = (() => {
+    switch (difficulty) {
+      case 'easy': return 40000;
+      case 'hard': return 12000;
+      default: return 20000;
+    }
+  })();
+
+  const rate = CURRENCY_RATES[currency] || 1;
+  const startingMoney = Math.round(startingMoneyUSD * rate);
+
+  let fmt;
+  try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }); } catch { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }); }
+  moneyDisplay.textContent = `Starting Money: ${fmt.format(startingMoney)}`;
+};
 
 const ensureRoot = () => {
   if (root) return;
@@ -57,21 +84,29 @@ const ensureRoot = () => {
   const mainPanel = el('div', { class: 'menu-main' }, [hero, slotsWrap]);
 
   newGameTitle = el('h2', { class: 'menu-newgame-title', text: 'New Game' });
-  newGameMoney = el('input', {
-    type: 'number',
-    min: '5000',
-    step: '500',
+  newGameAlias = el('input', {
+    type: 'text',
     class: 'menu-input',
-    id: 'newGameMoney',
-    value: '20000',
+    id: 'newGameAlias',
+    maxLength: 24,
+    placeholder: 'Crew alias',
+    autocomplete: 'off',
   });
-  const moneyLabel = el('label', { for: 'newGameMoney', class: 'menu-label', text: 'Starting Money' });
+  const aliasLabel = el('label', { for: 'newGameAlias', class: 'menu-label', text: 'Crew Alias' });
+
+  newGameDifficulty = el('select', { class: 'menu-input', id: 'newGameDifficulty' });
+  [['easy', 'Easy'], ['standard', 'Medium'], ['hard', 'Hard']]
+    .forEach(([value, label]) => newGameDifficulty.appendChild(el('option', { value, text: label, selected: value === 'standard' })));
+  const difficultyLabel = el('label', { for: 'newGameDifficulty', class: 'menu-label', text: 'Difficulty' });
+  newGameDifficulty.onchange = updateStartingMoneyDisplay;
 
   newGameCurrency = el('select', { class: 'menu-input', id: 'newGameCurrency' });
   for (const [code, name] of CURRENCIES) {
     const opt = el('option', { value: code, text: `${code} — ${name}` });
     newGameCurrency.appendChild(opt);
   }
+  newGameCurrency.onchange = updateStartingMoneyDisplay;
+
   const currencyLabel = el('label', { for: 'newGameCurrency', class: 'menu-label', text: 'Currency' });
 
   newGameError = el('div', { class: 'menu-error', text: '' });
@@ -85,8 +120,11 @@ const ensureRoot = () => {
   newGameForm = el('form', { class: 'menu-newgame-form' }, [
     newGameTitle,
     el('p', { class: 'menu-newgame-note', text: 'Choose your starting conditions. This will overwrite the selected slot.' }),
-    moneyLabel,
-    newGameMoney,
+    el('div', { id: 'newGameStartingMoney', class: 'menu-label', style: 'margin-top: 8px; text-align: center; color: #cfe8ff;' }),
+    aliasLabel,
+    newGameAlias,
+    difficultyLabel,
+    newGameDifficulty,
     currencyLabel,
     newGameCurrency,
     newGameError,
@@ -96,6 +134,17 @@ const ensureRoot = () => {
     e.preventDefault();
     handleNewGameSubmit();
   };
+  const updateStartBtn = () => {
+    if (!newGameStartBtn) return;
+    const alias = newGameAlias ? newGameAlias.value.trim() : '';
+    newGameStartBtn.disabled = !alias;
+    if (alias && newGameError) newGameError.textContent = '';
+  };
+  if (newGameAlias) {
+    newGameAlias.addEventListener('input', updateStartBtn);
+    newGameAlias.addEventListener('blur', updateStartBtn);
+  }
+  updateStartBtn();
 
   newGamePanel = el('div', { class: 'menu-newgame' }, [newGameForm]);
 
@@ -128,6 +177,12 @@ const renderSlots = () => {
   updateQuickResume(summaries);
 };
 
+const difficultyLabel = {
+  easy: 'Easy',
+  standard: 'Medium',
+  hard: 'Hard',
+};
+
 const formatMoney = (amount, currency) => {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount); }
   catch { return `${currency} ${Math.round(amount)}`; }
@@ -149,8 +204,9 @@ const updateQuickResume = (summaries) => {
     return bb - aa;
   })[0];
   quickResumeBtn.disabled = false;
+  const diffText = difficultyLabel[latest.difficulty] || 'Medium';
   quickResumeBtn.textContent = `Continue Slot ${latest.slot + 1}`;
-  quickResumeNote.textContent = `${formatMoney(latest.money, latest.currency)} — Level ${latest.level}`;
+  quickResumeNote.textContent = `${latest.alias || 'Crew'} • ${diffText} • ${formatMoney(latest.money, latest.currency)} — Level ${latest.level}`;
   quickResumeBtn.onclick = () => {
     if (!optionsRef || typeof optionsRef.onLoadGame !== 'function') return;
     const result = optionsRef.onLoadGame(latest.slot);
@@ -175,14 +231,13 @@ const renderSlotCard = (summary, index) => {
 
   const body = summary
     ? el('div', { class: 'slot-body' }, [
+        el('div', { class: 'slot-meta', text: `Alias: ${summary.alias || 'Crew'}` }),
+        el('div', { class: 'slot-meta', text: `Difficulty: ${difficultyLabel[summary.difficulty] || 'Medium'}` }),
         el('div', { text: `Level ${summary.level}` }),
         el('div', { text: formatMoney(summary.money, summary.currency) }),
         summary.lastPlayed
           ? el('div', { class: 'slot-meta', text: `Last played: ${new Date(summary.lastPlayed).toLocaleString()}` })
           : el('div', { class: 'slot-meta', text: 'Never played' }),
-        typeof summary.startingMoney === 'number'
-          ? el('div', { class: 'slot-meta', text: `Started with ${formatMoney(summary.startingMoney, summary.currency)}` })
-          : null,
       ])
     : el('div', { class: 'slot-body empty', text: 'No save data yet.' });
 
@@ -221,16 +276,15 @@ const openNewGamePanel = (slotIndex, summary) => {
   pendingSlot = slotIndex;
   newGameError.textContent = '';
   newGameTitle.textContent = `New Game — Slot ${slotIndex + 1}`;
-  if (summary && summary.currency) {
-    newGameCurrency.value = summary.currency;
-  } else {
-    newGameCurrency.value = 'USD';
-  }
-  if (summary && summary.startingMoney) newGameMoney.value = summary.startingMoney;
-  else newGameMoney.value = '20000';
+  if (newGameAlias) newGameAlias.value = summary && summary.alias ? summary.alias : '';
+  if (summary && summary.difficulty && newGameDifficulty) newGameDifficulty.value = summary.difficulty;
+  else if (newGameDifficulty) newGameDifficulty.value = 'standard';
+  if (summary && summary.currency) newGameCurrency.value = summary.currency; else newGameCurrency.value = 'USD';
+  if (newGameStartBtn) newGameStartBtn.disabled = !(newGameAlias && newGameAlias.value.trim());
   root.classList.add('newgame-open');
   newGamePanel.classList.add('open');
-  newGameMoney.focus();
+  if (newGameAlias) newGameAlias.focus();
+  updateStartingMoneyDisplay();
 };
 
 const closeNewGamePanel = () => {
@@ -243,13 +297,15 @@ const closeNewGamePanel = () => {
 
 const handleNewGameSubmit = () => {
   if (pendingSlot === null) return;
-  const moneyVal = sanitizeMoneyInput(newGameMoney && newGameMoney.value);
-  if (moneyVal < 1000) {
-    newGameError.textContent = 'Starting money must be at least 1,000.';
+  const alias = newGameAlias ? newGameAlias.value.trim() : '';
+  if (!alias) {
+    newGameError.textContent = 'Enter a crew alias to begin.';
+    if (newGameAlias) newGameAlias.focus();
     return;
   }
   const currency = (newGameCurrency && newGameCurrency.value) || 'USD';
-  const payload = { money: moneyVal, currency };
+  const difficulty = (newGameDifficulty && newGameDifficulty.value) || 'standard';
+  const payload = { alias, currency, difficulty };
   const handler = optionsRef && typeof optionsRef.onNewGame === 'function' ? optionsRef.onNewGame : null;
   const finish = () => {
     closeNewGamePanel();
@@ -288,12 +344,6 @@ const handleNewGameSubmit = () => {
   }
 };
 
-const sanitizeMoneyInput = (value) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 20000;
-  return Math.max(0, Math.round(num));
-};
-
 export function showMainMenu(options = {}) {
   optionsRef = options;
   ensureRoot();
@@ -323,7 +373,6 @@ export function teardownMainMenu() {
   newGamePanel = null;
   newGameForm = null;
   newGameTitle = null;
-  newGameMoney = null;
   newGameCurrency = null;
   newGameError = null;
   pendingSlot = null;

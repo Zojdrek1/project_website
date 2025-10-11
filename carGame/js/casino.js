@@ -90,7 +90,7 @@ export function initCasino({ state, saveState, addMoney, addXP, currencySymbol, 
     const tabBJ = el('button', { class: 'btn' + (ui.game==='blackjack'?' good':''), text: '🃑 Blackjack' }); tabBJ.onclick = ()=>{ ui.game='blackjack'; saveState(); render(); };
     tabs.appendChild(tabSlots); tabs.appendChild(tabBJ); view.appendChild(tabs);
     if (ui.game === 'blackjack') { renderBlackjack(); return; }
-    const panel = el('div', { class: 'panel' }, [ el('div', { class: 'row' }, [ el('h3', { text: 'Casino — Slots' }), el('div', { class: 'spacer' }), el('span', { class: 'tag info', text: `${ui.lines} lines` }) ]) ]);
+    const panel = el('div', { class: 'panel', ['data-tour-id']: 'casino-overview' }, [ el('div', { class: 'row' }, [ el('h3', { text: 'Casino — Slots' }), el('div', { class: 'spacer' }), el('span', { class: 'tag info', text: `${ui.lines} lines` }) ]) ]);
     const cont = document.createElement('div'); cont.className = 'slots'; panel.appendChild(cont);
     const layout = document.createElement('div'); layout.className = 'slots-layout'; cont.appendChild(layout);
 
@@ -293,7 +293,7 @@ export function initCasino({ state, saveState, addMoney, addXP, currencySymbol, 
         ui.bj.recent = [];
       }
     }
-    ensureBJ(); const b=ui.bj; const panel = el('div', { class:'panel', id:'bjPanel' }); panel.appendChild(el('div', { class:'row' }, [ el('h3', { text:'Casino — Blackjack' }), el('div', { class:'spacer' }) ]));
+    ensureBJ(); const b=ui.bj; const panel = el('div', { class:'panel', id:'bjPanel', ['data-tour-id']: 'casino-overview' }); panel.appendChild(el('div', { class:'row' }, [ el('h3', { text:'Casino — Blackjack' }), el('div', { class:'spacer' }) ]));
     const table = document.createElement('div'); table.className='bj-table felt-anim'; table.id='bjTable'; panel.appendChild(table);
     // Left side (gameplay)
     const left = document.createElement('div'); left.className='bj-left'; left.id='bjLeft'; table.appendChild(left);

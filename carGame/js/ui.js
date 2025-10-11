@@ -18,6 +18,8 @@ export function getIconSVG(name) {
     case 'race': return wrap('🏁');
     case 'trophy': return wrap('🏆');
     case 'chart': return wrap('📈');
+    case 'dashboard': return wrap('📊');
+    case 'help': return wrap('❓');
     case 'calendar': return wrap('📅');
     case 'refresh': return wrap('🔄');
     case 'cog': return wrap('⚙️');
@@ -104,7 +106,7 @@ export function showToast(message, type = 'info', actions = null, timeoutMs = 42
 }
 
 // Render top navigation and options popover
-export function renderNavUI({ state, currentView, navItems, onSetView, onToggleOptions, onHideOptions, onToggleDev, onNewGame, currencyCode = 'USD', currencies = [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']], onSetCurrency = null, onGoHome = null, onSetSound, onSetVolume, onTestSound }) {
+export function renderNavUI({ state, currentView, navItems, onSetView, onToggleOptions, onHideOptions, onToggleDev, onNewGame, onStartTutorial = null, tutorialActive = false, currencyCode = 'USD', currencies = [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']], onSetCurrency = null, onGoHome = null, onSetSound, onSetVolume, onTestSound, onExportSave = null, onImportSave = null, profileAlias = 'Crew Chief', shareLeaderboard = false, onSetAlias = null, onToggleShare = null }) {
   const nav = document.getElementById('nav');
   if (!nav) return;
   nav.innerHTML = '';
@@ -125,6 +127,25 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   // Options on the right
   const right = document.createElement('div');
   right.className = 'options';
+
+  if (typeof onStartTutorial === 'function') {
+    const helpBtn = document.createElement('button');
+    helpBtn.className = 'ghost' + (tutorialActive ? ' active' : '');
+    helpBtn.setAttribute('aria-label', 'Guide');
+    const label = tutorialActive ? 'Guide Active' : 'Guide';
+    helpBtn.innerHTML = getIconSVG('help') + `<span class="label">${label}</span>`;
+    helpBtn.disabled = !!tutorialActive;
+    if (!tutorialActive) helpBtn.onclick = () => onStartTutorial();
+    right.appendChild(helpBtn);
+  }
+
+  const leaderboardBtn = document.createElement('button');
+  leaderboardBtn.setAttribute('aria-label', 'Leaderboards');
+  leaderboardBtn.innerHTML = getIconSVG('chart') + '<span class="label">Boards</span>';
+  if (currentView === 'leaderboard') leaderboardBtn.classList.add('active');
+  leaderboardBtn.onclick = () => onSetView && onSetView('leaderboard');
+  right.appendChild(leaderboardBtn);
+
   const cogBtn = document.createElement('button');
   cogBtn.setAttribute('aria-label', 'Options');
   cogBtn.innerHTML = getIconSVG('cog') + '<span class="label">Options</span>';
@@ -134,11 +155,14 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   const pop = document.createElement('div');
   pop.id = 'optionsPop';
   pop.className = 'options-pop' + (state.ui && state.ui.showOptions ? ' open' : '');
+  const scroller = document.createElement('div');
+  scroller.className = 'options-scroller';
+  pop.appendChild(scroller);
   // Currency selector
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = 'Options';
-  pop.appendChild(title);
+  scroller.appendChild(title);
   const row = document.createElement('div');
   row.className = 'row';
   const sel = document.createElement('select');
@@ -148,7 +172,7 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   });
   sel.onchange = () => { onSetCurrency && onSetCurrency(sel.value); };
   row.appendChild(sel);
-  pop.appendChild(row);
+  scroller.appendChild(row);
   // Global sound controls
   const snd = document.createElement('div'); snd.className = 'row';
   const label = document.createElement('label'); label.textContent = 'Sound'; label.style.marginRight = '8px'; snd.appendChild(label);
@@ -163,27 +187,64 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   snd.appendChild(range);
   const test = document.createElement('button'); test.className='btn'; test.textContent='Test'; test.style.marginLeft = '6px'; test.onclick = () => { onTestSound && onTestSound(); };
   snd.appendChild(test);
-  pop.appendChild(snd);
+  scroller.appendChild(snd);
+  const aliasField = document.createElement('div'); aliasField.className = 'options-field';
+  const aliasLabel = document.createElement('label'); aliasLabel.textContent = 'Alias'; aliasField.appendChild(aliasLabel);
+  const aliasInput = document.createElement('input'); aliasInput.type = 'text'; aliasInput.maxLength = 24; aliasInput.value = profileAlias || ''; aliasInput.placeholder = 'Crew Alias';
+  aliasInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); aliasInput.blur(); } };
+  aliasInput.onblur = () => { if (onSetAlias) onSetAlias(aliasInput.value); };
+  aliasField.appendChild(aliasInput);
+  scroller.appendChild(aliasField);
+
+  const shareField = document.createElement('div'); shareField.className = 'options-field';
+  const shareLabel = document.createElement('label'); shareLabel.textContent = 'Share Scores'; shareField.appendChild(shareLabel);
+  const shareToggle = document.createElement('input'); shareToggle.type = 'checkbox'; shareToggle.checked = !!shareLeaderboard;
+  shareToggle.onchange = () => { onToggleShare && onToggleShare(!!shareToggle.checked); };
+  shareField.appendChild(shareToggle);
+  const shareHint = document.createElement('span'); shareHint.className = 'helper'; shareHint.textContent = 'Store anonymised leaderboard entries locally.';
+  shareField.appendChild(shareHint);
+  scroller.appendChild(shareField);
   // Divider
   const div1 = document.createElement('div');
   div1.className = 'divider';
-  pop.appendChild(div1);
+  scroller.appendChild(div1);
+  // Save management
+  const saveRow = document.createElement('div');
+  saveRow.className = 'row';
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'btn';
+  exportBtn.textContent = 'Export Save';
+  exportBtn.onclick = () => { onExportSave && onExportSave(); onHideOptions(); };
+  const importBtn = document.createElement('button');
+  importBtn.className = 'btn';
+  importBtn.textContent = 'Import Save';
+  importBtn.onclick = () => { onImportSave && onImportSave(); onHideOptions(); };
+  saveRow.appendChild(exportBtn);
+  saveRow.appendChild(importBtn);
+  scroller.appendChild(saveRow);
+  const saveNote = document.createElement('div');
+  saveNote.className = 'options-note';
+  saveNote.textContent = 'Export your save for backups or to sync between devices.';
+  scroller.appendChild(saveNote);
+  const div1b = document.createElement('div');
+  div1b.className = 'divider';
+  scroller.appendChild(div1b);
   // Back to main menu
   const newBtn = document.createElement('button');
   newBtn.className = 'btn warn';
   newBtn.textContent = 'Back to Main Menu';
   newBtn.onclick = () => { onNewGame(); onHideOptions(); };
-  pop.appendChild(newBtn);
+  scroller.appendChild(newBtn);
   // Divider
   const div2 = document.createElement('div');
   div2.className = 'divider';
-  pop.appendChild(div2);
+  scroller.appendChild(div2);
   // Dev Tools toggle
   const devBtn2 = document.createElement('button');
   devBtn2.className = 'btn';
   devBtn2.textContent = (state.ui && state.ui.showDev) ? 'Hide Dev Tools' : 'Show Dev Tools';
   devBtn2.onclick = () => { onToggleDev(); onHideOptions(); };
-  pop.appendChild(devBtn2);
+  scroller.appendChild(devBtn2);
 
   // --- Dev Tools Panel ---
   if (state.ui && state.ui.showDev) {
@@ -213,7 +274,7 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
       if (typeof window.render === 'function') window.render();
     };
     devPanel.appendChild(fixBtn);
-    pop.appendChild(devPanel);
+    scroller.appendChild(devPanel);
   }
 
   right.appendChild(pop);
@@ -628,12 +689,16 @@ export function renderGarageCarsSection({
   onTuneUp,
   onResetTuning,
   saveState,
+  achievements = [],
+  cosmeticPackages = [],
+  onBuyCosmetic = null,
 }) {
   if (!container) return;
   container.innerHTML = '';
 
   const tuningEnabled = Array.isArray(tuningOptions) && tuningOptions.length;
   const money = typeof state.money === 'number' ? state.money : 0;
+  const unlockedAchievements = Array.isArray(achievements) ? achievements.filter(a => a.unlocked) : [];
 
   const badgeCls = (v) => v >= 70 ? 'ok' : v >= 50 ? 'info' : 'bad';
 
@@ -724,6 +789,18 @@ export function renderGarageCarsSection({
     const headerRight = el('div', { class: 'header-right' }, [metricsGroup, sellBtn, toggleBtn]);
 
     const header = el('div', { class: 'garage-header' }, [headerLeft, headerRight]);
+    const badgeRow = unlockedAchievements.length ? (() => {
+      const maxBadge = 5;
+      const badges = unlockedAchievements.slice(0, maxBadge).map(ach => el('span', {
+        class: 'ach-badge',
+        title: `${ach.label} — ${ach.description}`,
+        text: ach.icon || '🏅',
+      }));
+      if (unlockedAchievements.length > maxBadge) {
+        badges.push(el('span', { class: 'ach-badge more', text: `+${unlockedAchievements.length - maxBadge}` }));
+      }
+      return el('div', { class: 'achievement-badge-row' }, badges);
+    })() : null;
 
     const breakdown = renderCarBreakdown({ car, idx, state, PARTS, modelId });
 
@@ -755,13 +832,40 @@ export function renderGarageCarsSection({
     breakdown.appendChild(running);
 
     const tuningPanel = buildTuningPanel(car, idx);
+    const cosmeticsPanel = (() => {
+      if (!Array.isArray(cosmeticPackages) || !cosmeticPackages.length) return null;
+      const rows = cosmeticPackages.map(pkg => {
+        const owned = Array.isArray(car.cosmetics) && car.cosmetics.includes(pkg.id);
+        const label = `${pkg.icon || '🖌️'} ${pkg.label}`;
+        return el('div', { class: 'cosmetic-row' }, [
+          el('div', { class: 'cosmetic-info' }, [
+            el('span', { class: 'cosmetic-label', text: label }),
+            el('span', { class: 'subtle', text: pkg.description }),
+          ]),
+          owned
+            ? el('span', { class: 'tag ok', text: 'Installed' })
+            : el('button', {
+                class: 'btn sm',
+                text: pkg.cost ? `Buy — ${fmt.format(pkg.cost)}` : 'Install',
+                onclick: () => onBuyCosmetic && onBuyCosmetic(idx, pkg.id),
+                disabled: money < (pkg.cost || 0),
+              }),
+        ]);
+      });
+      return el('div', { class: 'cosmetics-panel' }, [
+        el('strong', { text: 'Cosmetic Upgrades' }),
+        ...rows,
+      ]);
+    })();
     const contentChildren = [breakdown];
     if (tuningPanel) contentChildren.push(tuningPanel);
+    if (cosmeticsPanel) contentChildren.push(cosmeticsPanel);
     const collapsible = el('div', { class: 'collapsible ' + (isCarOpen(car.id) ? 'open' : ''), ['data-car-id']: car.id }, [
-      el('div', { class: 'content' }, contentChildren),
+      el('div', { class: 'content scrollable-content' }, contentChildren),
     ]);
 
-    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, el('div', { class: 'card-body' }, [ collapsible ]) ]);
+    const bodyChildren = badgeRow ? [badgeRow, collapsible] : [collapsible];
+    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, el('div', { class: 'card-body' }, bodyChildren) ]);
     container.appendChild(card);
   }
 
@@ -783,30 +887,97 @@ export function layoutCarBreakdown(container) {
   } catch {}
 }
 
-export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition, conditionStatus, isCarOpen, onToggleCarOpen, isSellConfirm, onSellClickById, onRaceCar, onOpenImagePicker, onRepairCar, tuningOptions = [], onTuneUp, onResetTuning, garageCapacity, nextGarageCost, onBuyGarageSlot, saveState }) {
+export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition, conditionStatus, isCarOpen, onToggleCarOpen, isSellConfirm, onSellClickById, onRaceCar, onOpenImagePicker, onRepairCar, tuningOptions = [], onTuneUp, onResetTuning, garageCapacity, nextGarageCost, onBuyGarageSlot, saveState, achievements = [], garageTierInfo = null, onUpgradeTier = null, onBuyCosmetic = null, cosmeticPackages = [], crewInvestments = [], onInvestCrew = null }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
+  view.setAttribute('data-current-view', 'garage');
   const capUsed = state.garage.length;
   const capMax = garageCapacity();
-  const costNext = nextGarageCost();
-  const capPanel = el('div', { class: 'panel' }, [
+  const tierInfo = garageTierInfo || {};
+  const slotCost = typeof tierInfo.nextSlotCost === 'number' ? tierInfo.nextSlotCost : nextGarageCost();
+  const tierLabel = tierInfo.label || 'Back-Alley Lockup';
+  const tierDesc = tierInfo.description || 'Starter lockup with minimal amenities.';
+  const baseSlots = tierInfo.baseSlots ?? (capMax - (tierInfo.extraSlots ?? 0));
+  const extraSlots = tierInfo.extraSlots ?? (state.garagesPurchased || 0);
+  const maxExtras = tierInfo.maxExtraSlots ?? null;
+  const canBuySlot = tierInfo.canBuySlot !== false && slotCost !== null;
+  const nextTier = tierInfo.nextTier || null;
+  const upgradeCost = nextTier && typeof nextTier.cost === 'number' ? nextTier.cost : null;
+  const canUpgrade = !!nextTier && tierInfo.canUpgrade !== false;
+  const affordUpgrade = canUpgrade && (upgradeCost === null || (state.money || 0) >= upgradeCost);
+  const capPanel = el('div', { class: 'panel storage-panel' }, [
     el('div', { class: 'row' }, [
-      el('h3', { text: 'Storage' }),
+      el('h3', { text: tierLabel }),
       el('div', { class: 'spacer' }),
       el('span', { class: 'tag info', ['data-storage-tag']: 'garage', text: `${capUsed}/${capMax} slots used` }),
-      el('span', { class: 'hidden', text: '' })
     ]),
-    el('div', { class: 'row' }, [
-      el('button', { class: 'btn primary', ['data-storage-buy']: 'garage', text: `Buy Slot (${fmt.format(costNext)})`, onclick: () => onBuyGarageSlot(), disabled: false }),
-    ]),
+    el('div', { class: 'storage-desc', text: tierDesc }),
+    el('div', { class: 'row storage-metrics' }, [
+      el('span', { class: 'tag subtle', text: `Base Slots: ${baseSlots}` }),
+      maxExtras !== null ? el('span', { class: 'tag subtle', text: `Extra Slots: ${extraSlots}/${maxExtras}` }) : null,
+    ].filter(Boolean)),
+    el('div', { class: 'row storage-actions' }, [
+      el('button', {
+        class: 'btn primary',
+        ['data-storage-buy']: 'garage',
+        text: canBuySlot ? (slotCost ? `Buy Slot (${fmt.format(slotCost)})` : 'Buy Slot') : 'Slots Maxed',
+        onclick: () => onBuyGarageSlot(),
+        disabled: !canBuySlot,
+      }),
+      canUpgrade ? el('button', {
+        class: 'btn good',
+        text: upgradeCost ? `Upgrade — ${fmt.format(upgradeCost)}` : 'Upgrade Tier',
+        onclick: () => onUpgradeTier && onUpgradeTier(),
+        disabled: !affordUpgrade,
+      }) : null,
+    ].filter(Boolean)),
   ]);
   view.appendChild(capPanel);
+
+  const crewHasItems = Array.isArray(crewInvestments) && crewInvestments.length;
+  const hasCrew = state.crew && Object.values(state.crew).some(Boolean);
+  if (crewHasItems || hasCrew) {
+    const crewRows = (crewHasItems ? crewInvestments : []).map(inv => {
+      const owned = !!inv.owned;
+      const costLabel = fmt.format(inv.cost || 0);
+      return el('div', { class: 'crew-row' }, [
+        el('div', { class: 'crew-info' }, [
+          el('span', { class: 'crew-icon', text: inv.icon || '🛠️' }),
+          el('div', { class: 'crew-text' }, [
+            el('strong', { text: inv.label }),
+            el('span', { class: 'subtle', text: inv.description }),
+          ]),
+        ]),
+        el('div', { class: 'crew-actions' }, [
+          owned
+            ? el('span', { class: 'tag ok', text: 'Active' })
+            : el('button', {
+                class: 'btn primary',
+                text: `Hire — ${costLabel}`,
+                onclick: () => onInvestCrew && onInvestCrew(inv.key),
+                disabled: !inv.afford,
+              }),
+        ]),
+      ]);
+    });
+    const body = crewRows.length ? crewRows : [el('div', { class: 'subtle', text: 'Crew fully staffed.' })];
+    const crewPanel = el('div', { class: 'panel crew-panel' }, [
+      el('div', { class: 'row' }, [
+        el('h3', { text: 'Crew Investments' }),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'tag info', text: 'Passive boosts' }),
+      ]),
+      el('div', { class: 'crew-grid' }, body),
+    ]);
+    view.appendChild(crewPanel);
+  }
+  const cardsContainer = el('div', { class: 'garage-cards', ['data-section']: 'garage-cars', ['data-tour-id']: 'garage-repair' });
   if (!state.garage.length) {
-    view.appendChild(el('div', { class: 'panel notice', text: 'No cars yet. Buy from the Illegal Market.' }));
+    cardsContainer.classList.add('is-empty');
+    cardsContainer.appendChild(el('div', { class: 'panel notice', text: 'No cars yet. Buy from the Illegal Market.' }));
+    view.appendChild(cardsContainer);
     return;
   }
-
-  const cardsContainer = el('div', { class: 'garage-cards', ['data-section']: 'garage-cars' });
   view.appendChild(cardsContainer);
 
   renderGarageCarsSection({
@@ -828,6 +999,9 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     onTuneUp,
     onResetTuning,
     saveState,
+    achievements,
+    cosmeticPackages,
+    onBuyCosmetic,
   });
 }
 export function renderPartsView({ state, PARTS, fmt }) {
@@ -890,7 +1064,7 @@ export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt, m
     ]);
     streetSection.appendChild(header);
 
-    const grid = el('div', { class: 'race-events-grid' });
+    const grid = el('div', { class: 'race-events-grid', ['data-tour-id']: 'races-enter' });
     RACE_EVENTS.forEach(event => {
       const suitableCar = state.garage.find(c => canRace(c) && c.perf >= event.opponentPerf - 15);
       const carOptions = state.garage.filter(c => canRace(c));
@@ -962,7 +1136,7 @@ export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt, m
 }
 
 function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState, onDismissFlash = null }) {
-  const section = el('div', { class: 'races-section league-section' });
+  const section = el('div', { class: 'races-section league-section', ['data-tour-id']: 'league-overview' });
   const league = leagueState || {};
   const rankCount = leagueData.length;
   const rankIndex = Math.min(rankCount - 1, Math.max(0, league.rank || 0));
@@ -1133,6 +1307,213 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
   return section;
 }
 
+export function renderDashboardView({ state, metrics, fmt, drawSparkline, xpInfo = {}, achievements = [], achievementSummary = {}, leaderboards = null, profileId = null }) {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = '';
+  view.setAttribute('data-current-view', 'dashboard');
+
+  const level = Math.max(1, Math.round((xpInfo && xpInfo.level) ?? (state && state.level) ?? 1));
+  const xp = Math.max(0, Math.round((xpInfo && xpInfo.xp) ?? (state && state.xp) ?? 0));
+  const needed = Math.max(1, Math.round((xpInfo && xpInfo.needed) ?? Math.max(1, xp) ));
+  const xpSummary = `Lv ${level} • ${xp}/${needed} XP`;
+  const heatNow = Math.max(0, Math.min(100, Math.round((state && state.heat) || 0)));
+  const carsCount = Math.max(0, metrics.carsCount || 0);
+
+  const cardsData = [
+    { key: 'net-worth', title: 'Net Worth', value: fmt.format(metrics.netWorth || 0), note: 'Cash + garage value' },
+    { key: 'cash', title: 'Cash on Hand', value: fmt.format(metrics.money || 0), note: 'Liquid funds available' },
+    { key: 'garage', title: 'Garage Value', value: fmt.format(metrics.garageValue || 0), note: `${carsCount} ${carsCount === 1 ? 'car' : 'cars'} owned` },
+    { key: 'condition', title: 'Avg Condition', value: `${Math.max(0, Math.round(metrics.avgCondition || 0))}%`, note: 'Across owned cars' },
+    { key: 'avg-heat', title: 'Avg Heat', value: `${Math.max(0, Math.round(metrics.avgHeat || 0))}%`, note: 'Last 20 samples' },
+    { key: 'current-heat', title: 'Current Heat', value: `${heatNow}%`, note: 'Immediate risk' },
+  ];
+
+  const makeCard = ({ key, title, value, note }) => el('div', { class: 'dashboard-card', ['data-card']: key }, [
+    el('span', { class: 'label', text: title }),
+    el('span', { class: 'value', text: value }),
+    note ? el('span', { class: 'note', text: note }) : null,
+  ].filter(Boolean));
+
+  const summaryPanel = el('div', { class: 'panel dashboard-summary', ['data-tour-id']: 'dashboard-overview' }, [
+    el('div', { class: 'dashboard-summary-header' }, [
+      el('div', { class: 'title-block' }, [
+        el('h2', { text: 'Operations Summary' }),
+        el('div', { class: 'subtle', text: xpSummary }),
+      ]),
+      el('div', { class: 'chip-row' }, [
+        el('span', { class: 'tag info', text: `Heat ${heatNow}%` }),
+        el('span', { class: 'tag info', text: carsCount === 1 ? '1 car in garage' : `${carsCount} cars in garage` }),
+        el('span', { class: 'tag info', text: `Season ${metrics.league?.season || 1}` }),
+      ]),
+    ]),
+    el('div', { class: 'dashboard-grid', ['data-tour-target']: 'dashboard-metrics' }, cardsData.map(makeCard)),
+  ]);
+
+  view.appendChild(summaryPanel);
+
+  const netHistory = Array.isArray(metrics.netWorthHistory) ? metrics.netWorthHistory.map(item => Math.max(0, Math.round(item?.value || 0))) : [];
+  const netPrev = netHistory.length > 1 ? netHistory[netHistory.length - 2] : null;
+  const netDelta = netPrev !== null ? (metrics.netWorth || 0) - netPrev : null;
+  const netDeltaText = netDelta === null ? '—' : `${netDelta >= 0 ? '+' : '-'}${fmt.format(Math.abs(netDelta))}`;
+  const netDeltaClass = netDelta === null ? 'neutral' : netDelta > 0 ? 'up' : netDelta < 0 ? 'down' : 'neutral';
+
+  const heatHistory = Array.isArray(metrics.heatSamples) ? metrics.heatSamples.map(item => Math.max(0, Math.round(item?.value || 0))) : [];
+  const heatCurrent = heatHistory.length ? heatHistory[heatHistory.length - 1] : heatNow;
+  const heatPrev = heatHistory.length > 1 ? heatHistory[heatHistory.length - 2] : null;
+  const heatDelta = heatPrev !== null ? heatCurrent - heatPrev : null;
+  const heatDeltaText = heatDelta === null ? '—' : `${heatDelta >= 0 ? '+' : ''}${Math.round(heatDelta)}%`;
+  const heatDeltaClass = heatDelta === null ? 'neutral' : heatDelta > 0 ? 'up' : heatDelta < 0 ? 'down' : 'neutral';
+
+  const netCanvas = el('canvas', { class: 'dashboard-spark', width: 320, height: 100 });
+  const heatCanvas = el('canvas', { class: 'dashboard-spark', width: 320, height: 100 });
+
+  const trendsPanel = el('div', { class: 'panel dashboard-trends', ['data-tour-id']: 'dashboard-trends' }, [
+    el('div', { class: 'dashboard-trends-header' }, [
+      el('h3', { text: 'Key Trends' }),
+      el('span', { class: 'subtle', text: 'Auto-updating analytics from recent play' }),
+    ]),
+    el('div', { class: 'dashboard-chart-grid' }, [
+      el('div', { class: 'dashboard-chart' }, [
+        el('div', { class: 'chart-header' }, [
+          el('span', { class: 'chart-title', text: 'Net Worth' }),
+          el('span', { class: `chart-delta ${netDeltaClass}`, text: netDeltaText }),
+        ]),
+        el('div', { class: 'chart-value', text: fmt.format(metrics.netWorth || 0) }),
+        netCanvas,
+      ]),
+      el('div', { class: 'dashboard-chart' }, [
+        el('div', { class: 'chart-header' }, [
+          el('span', { class: 'chart-title', text: 'Heat' }),
+          el('span', { class: `chart-delta ${heatDeltaClass}`, text: heatDeltaText }),
+        ]),
+        el('div', { class: 'chart-value', text: `${heatCurrent}%` }),
+        heatCanvas,
+      ]),
+    ]),
+  ]);
+
+  view.appendChild(trendsPanel);
+
+  const summaryUnlocked = Number.isFinite(achievementSummary.unlocked) ? achievementSummary.unlocked : achievements.filter(a => a.unlocked).length;
+  const summaryTotal = Number.isFinite(achievementSummary.total) ? achievementSummary.total : achievements.length;
+  const badgeGrid = el('div', { class: 'achievement-grid' }, achievements.map(ach => {
+    const tooltip = el('div', { class: 'achievement-pop' }, [
+      el('strong', { text: ach.label }),
+      el('p', { text: ach.description || 'Hidden objective.' }),
+    ]);
+    const card = el('div', {
+      class: 'achievement-card' + (ach.unlocked ? ' unlocked' : ' locked'),
+      ['data-achievement-id']: ach.id,
+      'aria-label': ach.description || ach.label,
+    }, [
+      el('div', { class: 'achievement-icon', text: ach.icon || '🏅' }),
+      el('div', { class: 'achievement-label', text: ach.label }),
+      ach.unlocked && ach.unlockedAt
+        ? el('div', { class: 'achievement-time', text: new Date(ach.unlockedAt).toLocaleDateString() })
+        : null,
+      tooltip,
+    ].filter(Boolean));
+    card.addEventListener('mouseenter', () => {
+      tooltip.classList.add('active');
+      const fallbackHeight = tooltip.offsetHeight || 70;
+      const fallbackTop = Math.max(8, card.clientHeight - fallbackHeight - 8);
+      tooltip.style.left = '16px';
+      tooltip.style.top = `${fallbackTop}px`;
+    });
+    card.addEventListener('mouseleave', () => {
+      tooltip.classList.remove('active');
+      tooltip.style.left = '';
+      tooltip.style.top = '';
+    });
+    card.addEventListener('mousemove', (event) => {
+      const rect = card.getBoundingClientRect();
+      const rawX = event.clientX - rect.left + 16;
+      const rawY = event.clientY - rect.top + 18;
+      const width = tooltip.offsetWidth || 220;
+      const height = tooltip.offsetHeight || 60;
+      const maxX = rect.width - width - 8;
+      const maxY = rect.height - height - 8;
+      const clampedX = Math.max(8, Math.min(rawX, maxX));
+      const clampedY = Math.max(8, Math.min(rawY, maxY));
+      tooltip.style.left = `${clampedX}px`;
+      tooltip.style.top = `${clampedY}px`;
+    });
+    return card;
+  }));
+  const achievementPanel = el('div', { class: 'panel dashboard-achievements', ['data-tour-id']: 'dashboard-achievements' }, [
+    el('div', { class: 'row' }, [
+      el('h3', { text: 'Achievements' }),
+      el('div', { class: 'spacer' }),
+      el('span', { class: 'tag info', text: `${summaryUnlocked}/${summaryTotal} unlocked` }),
+    ]),
+    badgeGrid,
+  ]);
+
+  const bestCar = metrics.bestCar || null;
+  const bestPanel = el('div', { class: 'panel dashboard-best', ['data-tour-id']: 'dashboard-best-car' }, [
+    el('div', { class: 'row' }, [
+      el('h3', { text: 'Top Performer' }),
+      bestCar ? el('span', {
+        class: `tag ${bestCar.profit >= 0 ? 'ok' : 'bad'}`,
+        text: `${bestCar.profit >= 0 ? '+' : '-'}${fmt.format(Math.abs(bestCar.profit || 0))} profit`,
+      }) : null,
+    ].filter(Boolean)),
+    bestCar ? el('div', { class: 'best-grid' }, [
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Model' }), el('span', { class: 'value', text: bestCar.model }) ]),
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Valuation' }), el('span', { class: 'value', text: fmt.format(bestCar.valuation || 0) }) ]),
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Condition' }), el('span', { class: 'value', text: `${Math.round(bestCar.condition || 0)}%` }) ]),
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Performance' }), el('span', { class: 'value', text: `${bestCar.perf || 0}` }) ]),
+    ]) : el('div', { class: 'empty', text: 'Acquire a car to start building your portfolio.' }),
+  ]);
+
+  const league = metrics.league || {};
+  const matchesTotal = Math.max(0, league.matchesTotal || 0);
+  const matchDisplay = matchesTotal ? `${Math.min(matchesTotal, (league.match || 0) + 1)}/${matchesTotal} matches` : 'No active bracket';
+  const leaguePanel = el('div', { class: 'panel dashboard-league', ['data-tour-id']: 'dashboard-league' }, [
+    el('div', { class: 'row' }, [
+      el('h3', { text: 'League Position' }),
+      league.champion ? el('span', { class: 'tag ok', text: 'Champion' }) : null,
+    ].filter(Boolean)),
+    el('div', { class: 'league-grid' }, [
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Rank' }), el('span', { class: 'value', text: league.rankName ? `${league.rankName}` : `Rank ${Math.max(1, (league.rank || 0) + 1)}` }) ]),
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Season' }), el('span', { class: 'value', text: `${league.season || 1}` }) ]),
+      el('div', { class: 'meta' }, [ el('span', { class: 'label', text: 'Progress' }), el('span', { class: 'value', text: matchDisplay }) ]),
+    ]),
+    league.rankName ? el('div', { class: 'subtle', text: `Competing in ${league.rankName}.` }) : null,
+  ]);
+
+  const activityFeed = el('div', { class: 'dashboard-log-feed', ['data-activity-log']: '' });
+  const activityPanel = el('div', { class: 'panel dashboard-log', ['data-tour-id']: 'dashboard-log' }, [
+    el('h3', { text: 'Recent Activity' }),
+    activityFeed,
+  ]);
+
+  const rowItems = [bestPanel, leaguePanel].filter(Boolean);
+  const rowPanels = rowItems.length ? el('div', { class: 'row-panels' }, rowItems) : null;
+  const bottom = el('div', { class: 'dashboard-bottom' }, [rowPanels, activityPanel, achievementPanel].filter(Boolean));
+  view.appendChild(bottom);
+
+  requestAnimationFrame(() => {
+    try {
+      if (netCanvas && netHistory.length >= 2) {
+        drawSparkline(netCanvas, netHistory, '#57b6ff', { formatter: (v) => fmt.format(Math.max(0, Math.round(v))) });
+      }
+      if (heatCanvas && heatHistory.length >= 2) {
+        drawSparkline(heatCanvas, heatHistory, '#ffb347', { zeroLine: true, formatter: (v) => `${Math.round(v)}%` });
+      }
+      const feed = view.querySelector('[data-activity-log]');
+      if (feed) {
+        feed.innerHTML = '';
+        const logs = Array.isArray(state.log) ? state.log.slice(0, 8) : [];
+        logs.forEach(entry => {
+          feed.appendChild(el('div', { class: 'activity-line', text: `• ${entry}` }));
+        });
+      }
+    } catch {}
+  });
+}
+
 export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar, isSellConfirm, onSellClickById }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
@@ -1149,7 +1530,7 @@ export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureMod
     listingsBody,
   ]);
 
-  const listingsPanel = el('div', { class: 'panel', ['data-panel']: 'market-listings' }, [
+  const listingsPanel = el('div', { class: 'panel', ['data-panel']: 'market-listings', ['data-tour-id']: 'market-buy' }, [
     el('div', { class: 'row' }, [
       el('h3', { text: 'Illegal Market — Cars' }),
       el('div', { class: 'spacer' }),

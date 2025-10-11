@@ -1,6 +1,7 @@
 // State and persistence extracted from script.js
 // Centralized state with migration and localStorage helpers
 
+import { CURRENCY_RATES } from './economy.js';
 import { PARTS, MODELS } from './data.js';
 import { TUNING_OPTIONS, clampTuningLevel, tuningBonus } from './tuning.js';
 import { LEAGUE_RANKS } from './race.js';
@@ -12,6 +13,11 @@ const toSlotKey = (index) => `${SLOT_PREFIX}${index + 1}`;
 const sanitizeMoney = (value, fallback) => {
   if (typeof value !== 'number' || !isFinite(value)) return fallback;
   return Math.max(0, Math.round(value));
+};
+
+const generateProfileId = () => {
+  try { return crypto.randomUUID(); } catch {}
+  return `profile-${Math.random().toString(36).slice(2, 10)}`;
 };
 
 /**
@@ -51,10 +57,22 @@ const sanitizeMoney = (value, fallback) => {
  * @returns {State}
  */
 export const defaultState = (options = {}) => {
-  const money = sanitizeMoney(options.money, 20000);
+  const difficulty = typeof options.difficulty === 'string' ? options.difficulty : 'standard';
   const currency = typeof options.currency === 'string' ? options.currency : 'USD';
+  const startingMoneyUSD = (() => {
+    switch (difficulty) {
+      case 'easy': return 40000;
+      case 'hard': return 12000;
+      default: return 20000;
+    }
+  })();
+  const rate = CURRENCY_RATES[currency] || 1;
+  const startingMoney = Math.round(startingMoneyUSD * rate);
+  const money = sanitizeMoney(options.money, startingMoney);
   const now = Date.now();
   const slot = typeof options.slot === 'number' ? options.slot : null;
+  const aliasRaw = typeof options.alias === 'string' ? options.alias.trim() : '';
+  const alias = aliasRaw ? aliasRaw.slice(0, 24) : 'Crew Chief';
   return {
     day: 1,
     money,
@@ -65,10 +83,22 @@ export const defaultState = (options = {}) => {
     illegalMarket: [],
     garage: [],
     garagesPurchased: 0,
+    garageTier: 0,
     partsPrices: { legal: {}, illegal: {} },
     modelTrends: {},
-    ui: { openCars: {}, showDev: false },
+    ui: { openCars: {}, showDev: false, tutorial: { completed: false, dismissedAt: 0 } },
     assets: { modelImages: {} },
+    achievements: { unlocked: {}, progress: {} },
+    crew: {
+      heatSuppression: false,
+      contrabandNetwork: false,
+      pitCrew: false,
+    },
+    profile: {
+      id: generateProfileId(),
+      alias,
+      shareLeaderboard: false,
+    },
     log: [
       'Welcome to ICS. Buy, fix, flip, and race.',
       'Prices change daily. Illegal parts are cheaper, but sketchy...',
@@ -86,6 +116,7 @@ export const defaultState = (options = {}) => {
       lastPlayed: now,
       startingMoney: money,
       slot,
+      difficulty,
     },
   };
 };
@@ -148,6 +179,8 @@ export function getSlotSummary(slotIndex) {
     lastPlayed: typeof meta.lastPlayed === 'number' ? meta.lastPlayed : null,
     createdAt: typeof meta.createdAt === 'number' ? meta.createdAt : null,
     startingMoney: typeof meta.startingMoney === 'number' ? Math.max(0, Math.round(meta.startingMoney)) : null,
+    alias: data.profile && typeof data.profile.alias === 'string' ? data.profile.alias : 'Crew Chief',
+    difficulty: typeof meta.difficulty === 'string' ? meta.difficulty : 'standard',
   };
 }
 
@@ -163,14 +196,38 @@ export function migrateState() {
     if (typeof state.currency !== 'string') state.currency = 'USD';
     if (typeof state.heat !== 'number' || !isFinite(state.heat)) state.heat = 0;
     if (!state.modelTrends) state.modelTrends = {};
-    if (!state.ui || typeof state.ui !== 'object') state.ui = { openCars: {}, showDev: false };
+    if (!state.ui || typeof state.ui !== 'object') state.ui = { openCars: {}, showDev: false, tutorial: { completed: false, dismissedAt: 0 } };
     if (!state.ui.openCars) state.ui.openCars = {};
     if (typeof state.ui.showDev !== 'boolean') state.ui.showDev = false;
+    if (!state.ui.tutorial || typeof state.ui.tutorial !== 'object') state.ui.tutorial = { completed: false, dismissedAt: 0 };
+    if (typeof state.ui.tutorial.completed !== 'boolean') state.ui.tutorial.completed = false;
+    if (typeof state.ui.tutorial.dismissedAt !== 'number') state.ui.tutorial.dismissedAt = 0;
+    if (!state.achievements || typeof state.achievements !== 'object') state.achievements = { unlocked: {}, progress: {} };
+    if (!state.achievements.unlocked || typeof state.achievements.unlocked !== 'object') state.achievements.unlocked = {};
+    if (!state.achievements.progress || typeof state.achievements.progress !== 'object') state.achievements.progress = {};
+    if (!state.crew || typeof state.crew !== 'object') {
+      state.crew = { heatSuppression: false, contrabandNetwork: false, pitCrew: false };
+    } else {
+      if (typeof state.crew.heatSuppression !== 'boolean') state.crew.heatSuppression = false;
+      if (typeof state.crew.contrabandNetwork !== 'boolean') state.crew.contrabandNetwork = false;
+      if (typeof state.crew.pitCrew !== 'boolean') state.crew.pitCrew = false;
+    }
+    if (!state.profile || typeof state.profile !== 'object') {
+      state.profile = { id: generateProfileId(), alias: 'Crew Chief', shareLeaderboard: false };
+    } else {
+      if (typeof state.profile.id !== 'string' || !state.profile.id) state.profile.id = generateProfileId();
+      if (typeof state.profile.alias !== 'string' || !state.profile.alias.trim()) state.profile.alias = 'Crew Chief';
+      state.profile.alias = state.profile.alias.slice(0, 24);
+      if (typeof state.profile.shareLeaderboard !== 'boolean') state.profile.shareLeaderboard = false;
+    }
+    if (typeof state.garageTier !== 'number' || !isFinite(state.garageTier) || state.garageTier < 0) state.garageTier = 0;
     if (!state.assets || typeof state.assets !== 'object') state.assets = { modelImages: {} };
     if (!state.assets.modelImages) state.assets.modelImages = {};
     if (!state.partsPrices || typeof state.partsPrices !== 'object') state.partsPrices = { legal: {}, illegal: {} };
     if (!state.partsPrices.legal) state.partsPrices.legal = {};
     if (!state.partsPrices.illegal) state.partsPrices.illegal = {};
+    if (!state.meta || typeof state.meta !== 'object') state.meta = { difficulty: 'standard' };
+    if (typeof state.meta.difficulty !== 'string' || !['easy','standard','hard'].includes(state.meta.difficulty)) state.meta.difficulty = 'standard';
     const allowedModels = new Set(MODELS.map(m => m.model));
     const normalizeCar = (car) => {
       if (!car || !car.parts) return;

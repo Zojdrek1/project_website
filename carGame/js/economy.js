@@ -17,7 +17,7 @@ const randi = (min, max) => Math.floor(rand(min, max));
 const sample = (arr) => arr[randi(0, arr.length)];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-const CURRENCY_RATES = { USD: 1, GBP: 0.79, EUR: 0.93, JPY: 155, PLN: 4.0 };
+export const CURRENCY_RATES = { USD: 1, GBP: 0.79, EUR: 0.93, JPY: 155, PLN: 4.0 };
 const getRate = () => CURRENCY_RATES[(state && state.currency) || 'USD'] || 1;
 
 export function ensureModelTrends() {
