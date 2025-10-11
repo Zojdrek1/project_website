@@ -3,6 +3,7 @@
 
 import { state } from './state.js';
 import { PARTS, MODELS } from './data.js';
+import { TUNING_OPTIONS } from './tuning.js';
 
 // Re-exported timing/config so other modules can share them
 export const PARTS_TICK_MS = 8000; // parts update interval
@@ -58,16 +59,22 @@ export function refreshIllegalMarket() {
     const priceVar = rand(0.75, 1.25);
     const base = Math.round(baseModel.basePrice * getRate());
     const price0 = Math.round(base * priceVar * condFactor);
+    const basePerf = baseModel.perf;
     const car = {
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
       model: baseModel.model,
       basePrice: base,
-      perf: baseModel.perf,
+      perf: basePerf,
+      basePerf,
       price: price0,
       priceHistory: [price0],
       parts,
       boughtPrice: null,
+      tuning: Object.fromEntries(TUNING_OPTIONS.map(opt => [opt.key, 0])),
+      tuningBonus: 0,
     };
+    const perfCondFactor = 0.6 + 0.4 * Math.max(0, Math.min(1, avgCond / 100));
+    car.perf = Math.round(basePerf * perfCondFactor);
     // Seed listing price history from model index adjusted by condition
     const series = state.modelTrends[baseModel.model] || [Math.round(baseModel.basePrice * getRate())];
     const seedLen = Math.min(30, series.length);
@@ -162,4 +169,3 @@ export function tickIllegalMarketCore() {
   // Heat decay only (events/UI outside core)
   if ((state.heat || 0) > 0) state.heat = Math.max(0, state.heat - 1);
 }
-

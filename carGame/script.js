@@ -1,7 +1,9 @@
 // --- Utility helpers ---
 import { PARTS, MODELS } from './js/data.js';
-import { state, setState, defaultState, saveState, loadState, migrateState } from './js/state.js';
-import { canRace, simulateRaceOutcome, RACE_EVENTS } from './js/race.js';
+import { TUNING_OPTIONS, nextTuningStage, tuningStage, tuningBonus, clampTuningLevel } from './js/tuning.js';
+import { state, setState, defaultState, saveState, migrateState, getCurrentSlot, loadSlotIntoState, createNewStateForSlot } from './js/state.js';
+import { showMainMenu, hideMainMenu } from './js/menu.js';
+import { canRace, simulateRaceOutcome, RACE_EVENTS, LEAGUE_RANKS } from './js/race.js';
 import { ensureModelTrends, refreshIllegalMarket, refreshPartsPrices, tickPartsPricesCore, tickIllegalMarketCore, PRICE_HISTORY_MAX, PARTS_TICK_MS, ILLEGAL_TICK_MS, ILLEGAL_LISTING_REFRESH_MS } from './js/economy.js';
 import { showRaceAnimation } from './js/raceAnimation.js';
 import { el, ensureToasts, showToast, getIconSVG, renderNavUI, renderCenterNavUI, drawSparkline, renderMarketView, updateMarketPricesAndTrendsUI, renderGarageFullView, renderPartsView, updatePartsPricesUI as updatePartsPricesUI_M, renderRacesView, layoutCarBreakdown, getBodyStyle, getSilhouettePath } from './js/ui.js';
@@ -22,6 +24,89 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const CURRENCY_RATES = { USD: 1, GBP: 0.79, EUR: 0.93, JPY: 155, PLN: 4.0 };
 const getRate = () => CURRENCY_RATES[(state && state.currency) || 'USD'] || 1;
 
+const TUNING_BY_KEY = Object.fromEntries(TUNING_OPTIONS.map(opt => [opt.key, opt]));
+
+function ensureCarTuning(car) {
+  if (!car) return;
+  if (typeof car.basePerf !== 'number' || !isFinite(car.basePerf)) car.basePerf = typeof car.perf === 'number' ? car.perf : 0;
+  if (!car.tuning || typeof car.tuning !== 'object') car.tuning = {};
+  for (const opt of TUNING_OPTIONS) {
+    const level = clampTuningLevel(opt, car.tuning[opt.key] ?? 0);
+    car.tuning[opt.key] = level;
+  }
+  recalcCarPerf(car);
+}
+
+function recalcCarPerf(car) {
+  if (!car) return;
+  if (typeof car.basePerf !== 'number' || !isFinite(car.basePerf)) car.basePerf = typeof car.perf === 'number' ? car.perf : 0;
+  const avg = avgCondition(car);
+  const conditionFactor = 0.6 + 0.4 * Math.max(0, Math.min(1, avg / 100));
+  const tuning = tuningBonus(car.tuning || {});
+  car.tuningBonus = tuning;
+  const base = car.basePerf ?? 0;
+  car.perf = Math.max(0, Math.round(base * conditionFactor + tuning));
+}
+
+function upgradeCarTuning(garageIndex, key) {
+  const car = state.garage[garageIndex];
+  if (!car) return;
+  const option = TUNING_BY_KEY[key];
+  if (!option) return;
+  ensureCarTuning(car);
+  const level = car.tuning[key] ?? 0;
+  const nextStage = nextTuningStage(option, level);
+  if (!nextStage) {
+    showToast(`${option.name} already maxed.`, 'info');
+    return;
+  }
+  const cost = nextStage.cost || 0;
+  if (state.money < cost) {
+    showToast('Not enough cash for this tuning upgrade.', 'warn');
+    return;
+  }
+  addMoney(-cost, `${option.name} tuning`);
+  car.tuning[key] = clampTuningLevel(option, level + 1);
+  recalcCarPerf(car);
+  showToast(`${option.name} upgraded to ${nextStage.label}.`, 'good');
+  saveState();
+  render();
+}
+
+function resetCarTuning(garageIndex, key) {
+  const car = state.garage[garageIndex];
+  if (!car) return;
+  const option = TUNING_BY_KEY[key];
+  if (!option) return;
+  ensureCarTuning(car);
+  if ((car.tuning[key] ?? 0) === 0) {
+    showToast(`${option.name} is already stock.`, 'info');
+    return;
+  }
+  car.tuning[key] = 0;
+  recalcCarPerf(car);
+  showToast(`${option.name} reset to stock.`, 'info');
+  saveState();
+  render();
+}
+
+function ensureLeagueState() {
+  if (!state.league || typeof state.league !== 'object') {
+    state.league = { rank: 0, match: 0, history: [], completedRanks: [], champion: false, season: 1 };
+  }
+  const league = state.league;
+  if (typeof league.rank !== 'number' || !isFinite(league.rank)) league.rank = 0;
+  league.rank = Math.max(0, Math.min(LEAGUE_RANKS.length - 1, Math.round(league.rank)));
+  if (typeof league.match !== 'number' || !isFinite(league.match)) league.match = 0;
+  const maxMatches = LEAGUE_RANKS[league.rank]?.opponents?.length ?? 0;
+  league.match = Math.max(0, Math.min(maxMatches, Math.round(league.match)));
+  if (!Array.isArray(league.history)) league.history = [];
+  if (!Array.isArray(league.completedRanks)) league.completedRanks = [];
+  if (typeof league.champion !== 'boolean') league.champion = false;
+  if (typeof league.season !== 'number' || !isFinite(league.season) || league.season < 1) league.season = 1;
+  return league;
+}
+
 // --- Game Data ---
 // PARTS and MODELS moved to ./js/data.js
 
@@ -37,6 +122,8 @@ let stickyMeasureTimer = null;
 let loaderHidden = false;
 let loaderTimer = null;
 let loaderProgress = 0;
+let gameBooted = false;
+let menuHandlers = null;
 
 // In-memory cache to avoid retrying the same missing image URLs
 const failedImgCache = new Set();
@@ -89,7 +176,13 @@ function startLoaderProgress() {
   }, 220);
 }
 
-function resetState() { setState(defaultState()); ensureModelTrends(); refreshAll(); saveState(); }
+function resetState(options = {}) {
+  const slot = getCurrentSlot();
+  const fresh = defaultState({ ...options, slot: typeof slot === 'number' ? slot : null });
+  setState(fresh, typeof slot === 'number' ? slot : undefined);
+  ensureModelTrends();
+  refreshAll();
+}
 
 // One-time auto reset: if an old save exists right now, start a new game once
 function maybeAutoResetOnExistingSave() {
@@ -156,16 +249,21 @@ function newCar(fromModel) {
   const priceVar = rand(0.75, 1.25);
   const base = Math.round(fromModel.basePrice * getRate());
   const price = Math.round(base * priceVar * condFactor);
-  return {
+  const car = {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     model: fromModel.model,
     basePrice: base,
     perf: fromModel.perf,
+    basePerf: fromModel.perf,
     price,
     priceHistory: [price],
     parts,
     boughtPrice: null,
+    tuning: {},
+    tuningBonus: 0,
   };
+  ensureCarTuning(car);
+  return car;
 }
 
 function startPartsTicker() {
@@ -266,6 +364,7 @@ function buyCar(idx) {
   // Start from the price it was bought at so the trend begins at purchase
   car.valuation = car.boughtPrice;
   car.valuationHistory = [car.boughtPrice];
+  ensureCarTuning(car);
   state.garage.push(car);
   state.illegalMarket.splice(idx, 1);
   addXP(15, `Acquired ${car.model}`);
@@ -387,6 +486,7 @@ function raceCar(garageIndex, eventId) {
       car.parts[key] = clamp(cond - drop, 0, 100);
       car.failed = true;
       pushLog(`${car.model} DNF — ${PARTS.find(p=>p.key===key).name} failed during the race! Vehicle must be repaired before racing again.`);
+      recalcCarPerf(car);
     } else if (outcome.win) {
       addMoney(event.prize, `${event.name} win`);
       addXP(Math.round(12 + car.perf / 10), `${car.model} race win`);
@@ -398,6 +498,119 @@ function raceCar(garageIndex, eventId) {
     }
     const wearPart = sample(PARTS).key;
     car.parts[wearPart] = clamp((car.parts[wearPart] ?? 100) - Math.round(rand(5, 12)), 0, 100);
+    recalcCarPerf(car);
+    render();
+    saveState();
+  });
+}
+
+function leagueCurrentRank() {
+  const league = ensureLeagueState();
+  const rankIndex = Math.min(LEAGUE_RANKS.length - 1, Math.max(0, league.rank));
+  return {
+    league,
+    rankIndex,
+    rank: LEAGUE_RANKS[rankIndex] || null,
+  };
+}
+
+function recordLeagueHistory(entry) {
+  ensureLeagueState();
+  state.league.history.unshift({ ...entry, ts: Date.now(), season: state.league.season });
+  if (state.league.history.length > 25) state.league.history.length = 25;
+}
+
+function startLeagueNewSeason() {
+  const league = ensureLeagueState();
+  if (!league.champion) {
+    showToast('Win the league finals to start a new season.', 'info');
+    return;
+  }
+  league.season += 1;
+  league.rank = 0;
+  league.match = 0;
+  league.champion = false;
+  league.completedRanks = [];
+  pushLog(`New League Season ${league.season} begins!`);
+  saveState();
+  render();
+}
+
+function raceLeague(garageIndex) {
+  const { league, rank, rankIndex } = leagueCurrentRank();
+  if (!rank) {
+    showToast('League data unavailable.', 'warn');
+    return;
+  }
+  if (league.champion && rankIndex >= LEAGUE_RANKS.length - 1 && league.match >= rank.opponents.length) {
+    showToast('You have already claimed the league championship! Start a new season to keep racing.', 'info');
+    return;
+  }
+  const opponent = rank.opponents[league.match] || rank.opponents[rank.opponents.length - 1];
+  if (!opponent) {
+    showToast('League rank complete. Advance to the next stage!', 'good');
+    return;
+  }
+  const car = state.garage[garageIndex];
+  if (!car) return;
+  if (!canRace(car)) { showToast('Vehicle must be repaired before racing.', 'warn'); return; }
+  const entryFee = opponent.entryFee || rank.entryFee || 0;
+  if (entryFee && state.money < entryFee) { showToast(`Need ${fmt.format(entryFee)} entry fee.`, 'warn'); return; }
+  if (entryFee) addMoney(-entryFee, `${rank.name} entry`);
+
+  const event = {
+    id: `${rank.id}_${league.match}`,
+    name: `${rank.name} — ${opponent.name}`,
+    entryFee,
+    prize: opponent.reward,
+    heat: opponent.heat ?? rank.heat ?? 4,
+    trackType: opponent.trackType || 'league',
+  };
+  const outcome = simulateRaceOutcome(car, opponent.perf);
+
+  showRaceAnimation(car, event, outcome, () => {
+    if (outcome.failedPart) {
+      const key = outcome.failedPart;
+      const cond = car.parts[key] ?? 100;
+      const drop = Math.round(rand(18, 36));
+      car.parts[key] = clamp(cond - drop, 0, 100);
+      car.failed = true;
+      pushLog(`${car.model} retired — ${PARTS.find(p=>p.key===key).name} failed during the league heat!`);
+      recordLeagueHistory({ rank: rank.id, rankName: rank.name, opponent: opponent.name, result: 'fail', car: car.model });
+      recalcCarPerf(car);
+    } else if (outcome.win) {
+      if (event.prize) addMoney(event.prize, `${rank.name} win`);
+      const xpGain = opponent.xp ?? Math.round(18 + car.perf / 8);
+      addXP(xpGain, `${car.model} league win`);
+      addHeat(event.heat ?? 4, 'League race');
+      recordLeagueHistory({ rank: rank.id, rankName: rank.name, opponent: opponent.name, result: 'win', car: car.model });
+      league.match += 1;
+      if (league.match >= rank.opponents.length) {
+        const rankId = rank.id;
+        if (!league.completedRanks.includes(rankId)) {
+          if (rank.trophyReward) addMoney(rank.trophyReward, `${rank.name} trophy purse`);
+          if (rank.trophyXp) addXP(rank.trophyXp, `${rank.name} championship`);
+          league.completedRanks.push(rankId);
+        }
+        if (league.rank < LEAGUE_RANKS.length - 1) {
+          league.rank += 1;
+          league.match = 0;
+          showToast(`Advanced to ${LEAGUE_RANKS[league.rank].name}!`, 'good');
+        } else {
+          league.champion = true;
+          league.match = rank.opponents.length;
+          showToast('You are the Midnight League Champion!', 'good');
+        }
+      }
+    } else {
+      pushLog(`${car.model} lost the league heat against ${opponent.name}.`);
+      addXP(Math.round(6 + car.perf / 14), `${car.model} league experience`);
+      addHeat(Math.max(1, Math.round((event.heat ?? rank.heat ?? 4) / 2)), 'League race');
+      recordLeagueHistory({ rank: rank.id, rankName: rank.name, opponent: opponent.name, result: 'loss', car: car.model });
+    }
+    const wearPart = sample(PARTS).key;
+    car.parts[wearPart] = clamp((car.parts[wearPart] ?? 100) - Math.round(rand(6, 14)), 0, 100);
+    recalcCarPerf(car);
     render();
     saveState();
   });
@@ -441,6 +654,7 @@ function repairCar(garageIndex, partKey, source) {
     const healthy = PARTS.every(p => (car.parts[p.key] ?? 100) >= 60);
     if (healthy) car.failed = false;
   }
+  recalcCarPerf(car);
   addXP(source === 'legal' ? 4 : 6, `Serviced ${partKey}`);
   render();
   saveState();
@@ -450,7 +664,8 @@ function repairCar(garageIndex, partKey, source) {
 const NAV = [
   { key: 'market', label: 'Illegal Market', icon: 'cart' },
   { key: 'garage', label: 'Garage', icon: 'garage' },
-  { key: 'races', label: 'Races', icon: 'flag' },
+  { key: 'street_races', label: 'Street Races', icon: 'flag' },
+  { key: 'league', label: 'League Racing', icon: 'trophy' },
   { key: 'casino', label: 'Casino', icon: 'casino' },
 ];
 let currentView = 'market';
@@ -495,9 +710,15 @@ function renderNav() {
     onToggleOptions: () => toggleOptionsMenu(),
     onHideOptions: () => hideOptionsMenu(),
     onToggleDev: () => toggleDevPanel(),
-    onNewGame: () => showToast('Start a new game?', 'info', [
-      { label: 'Cancel', action: () => {} },
-      { label: 'Confirm', action: () => resetState() }
+    onNewGame: () => showToast('Back to the main menu? Current progress auto-saves.', 'info', [
+      { label: 'Stay', action: () => {} },
+      {
+        label: 'Back to Menu',
+        action: () => {
+          const slot = getCurrentSlot();
+          if (menuHandlers) showMainMenu(menuHandlers);
+        },
+      }
     ]),
     currencyCode: state.currency || 'USD',
     currencies: [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']],
@@ -942,6 +1163,8 @@ function renderCarBreakdown(car, idx) {
   // Prefer known bundled silhouettes first to avoid noisy 404s
   const candidates = [
     imgSrc, // uploaded per-model image if any
+    'Assets/Cars/default_Car.png',
+    'assets/cars/default_Car.png',
     `Assets/Cars/${styleSlug}.svg`,
     `assets/cars/${styleSlug}.svg`,
     `Assets/Cars/${slug}.svg`,
@@ -1154,13 +1377,36 @@ function render() {
       onRaceCar: (idx) => raceCar(idx),
       onOpenImagePicker: (m) => openImagePicker(m),
       onRepairCar: (idx, key, source) => repairCar(idx, key, source),
+      tuningOptions: TUNING_OPTIONS,
+      onTuneUp: (idx, key) => upgradeCarTuning(idx, key),
+      onResetTuning: (idx, key) => resetCarTuning(idx, key),
       garageCapacity,
       nextGarageCost,
       onBuyGarageSlot: () => buyGarageSlot(),
       saveState: () => saveState(),
     });
-  } else if (currentView === 'races') {
-    renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar: raceCar, fmt });
+  } else if (currentView === 'street_races') {
+    renderRacesView({
+      state,
+      RACE_EVENTS,
+      canRace,
+      onRaceCar: raceCar,
+      fmt,
+      mode: 'street',
+    });
+  } else if (currentView === 'league') {
+    renderRacesView({
+      state,
+      RACE_EVENTS,
+      canRace,
+      onRaceCar: raceCar,
+      fmt,
+      mode: 'league',
+      leagueData: LEAGUE_RANKS,
+      leagueState: ensureLeagueState(),
+      onLeagueRace: (garageIndex) => raceLeague(garageIndex),
+      onLeagueReset: () => startLeagueNewSeason(),
+    });
   } else if (currentView === 'casino') {
     renderCasino();
   }
@@ -2278,17 +2524,22 @@ function refreshAll() {
   saveState();
 }
 
-async function initializeGame() {
-  startLoaderProgress();
-  // Brief pause for loader to appear and start animating
+async function initializeGame({ skipLoader = false } = {}) {
+  if (gameBooted) {
+    try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
+    render();
+    return true;
+  }
+  gameBooted = true;
+  if (!skipLoader) startLoaderProgress();
   await new Promise(resolve => setTimeout(resolve, 100));
-
-  // Ensure any pre-existing save is migrated before first render
   migrateState();
   if (!state.illegalMarket.length) refreshIllegalMarket();
   if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
   ensureModelTrends();
-  // Apply currency from save
+  ensureLeagueState();
+  state.illegalMarket.forEach(ensureCarTuning);
+  state.garage.forEach(ensureCarTuning);
   try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
   startPartsTicker();
   startIllegalTicker();
@@ -2297,9 +2548,9 @@ async function initializeGame() {
   ensureToasts();
   updateStickyOffsets();
   window.addEventListener('resize', scheduleStickyMeasure);
-
   render();
   hideLoader();
+  return true;
 }
 
 // Toast helpers moved to ui.js
@@ -2324,4 +2575,23 @@ function buyGarageSlot() {
   saveState();
 }
 
-initializeGame();
+document.addEventListener('DOMContentLoaded', () => {
+  menuHandlers = {
+    onLoadGame: (slotIndex) => {
+      if (!loadSlotIntoState(slotIndex)) {
+        showToast('No save data in this slot yet.', 'warn');
+        return false;
+      }
+      currentView = 'market';
+      hideMainMenu();
+      return initializeGame();
+    },
+    onNewGame: (slotIndex, opts) => {
+      createNewStateForSlot(slotIndex, opts);
+      currentView = 'market';
+      hideMainMenu();
+      return initializeGame();
+    },
+  };
+  showMainMenu(menuHandlers);
+});

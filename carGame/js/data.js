@@ -26,30 +26,17 @@ export const PARTS = [
 ];
 
 export const MODELS = [
-  // Existing fictional/global set
-  { model: 'Cobra GT', basePrice: 18000, perf: 80 },
-  { model: 'Veloce RS', basePrice: 24000, perf: 88 },
-  { model: 'Sakura Sport', basePrice: 14000, perf: 72 },
-  { model: 'Highland 4x4', basePrice: 16000, perf: 65 },
-  { model: 'Sting S', basePrice: 30000, perf: 95 },
-  { model: 'Metro Hatch', basePrice: 8000, perf: 50 },
-  { model: 'Silver Arrow', basePrice: 22000, perf: 78 },
-  { model: 'Comet R', basePrice: 28000, perf: 90 },
-  { model: 'Falcon V6', basePrice: 12000, perf: 62 },
-  { model: 'Zephyr Coupe', basePrice: 20000, perf: 75 },
-
-  // JDM additions (well‑known enthusiast models)
-  { model: 'Nissan Skyline GT-R R34', basePrice: 65000, perf: 98 },
-  { model: 'Toyota Supra Mk4 (A80)', basePrice: 52000, perf: 92 },
-  { model: 'Mazda RX-7 (FD3S)', basePrice: 38000, perf: 88 },
-  { model: 'Honda NSX (NA2)', basePrice: 90000, perf: 96 },
-  { model: 'Mitsubishi Lancer Evo VI', basePrice: 32000, perf: 86 },
-  { model: 'Subaru Impreza WRX STI (GC8)', basePrice: 28000, perf: 84 },
-  { model: 'Nissan Silvia (S15)', basePrice: 26000, perf: 82 },
-  { model: 'Toyota AE86 Trueno', basePrice: 18000, perf: 70 },
-  { model: 'Honda S2000 (AP2)', basePrice: 30000, perf: 85 },
-  { model: 'Nissan 300ZX (Z32)', basePrice: 22000, perf: 78 },
-  { model: 'Toyota Chaser (JZX100)', basePrice: 26000, perf: 80 },
-  { model: 'Toyota Aristo V300 (JZS161)', basePrice: 24000, perf: 76 },
+  // JDM roster
+  { model: 'Nissan Skyline GT-R R34', basePrice: 65000, perf: 330 },
+  { model: 'Toyota Supra Mk4 (A80)', basePrice: 52000, perf: 320 },
+  { model: 'Mazda RX-7 (FD3S)', basePrice: 38000, perf: 295 },
+  { model: 'Honda NSX (NA2)', basePrice: 90000, perf: 310 },
+  { model: 'Mitsubishi Lancer Evo VI', basePrice: 32000, perf: 285 },
+  { model: 'Subaru Impreza WRX STI (GC8)', basePrice: 28000, perf: 280 },
+  { model: 'Nissan Silvia (S15)', basePrice: 26000, perf: 255 },
+  { model: 'Toyota AE86 Trueno', basePrice: 18000, perf: 165 },
+  { model: 'Honda S2000 (AP2)', basePrice: 30000, perf: 265 },
+  { model: 'Nissan 300ZX (Z32)', basePrice: 22000, perf: 305 },
+  { model: 'Toyota Chaser (JZX100)', basePrice: 26000, perf: 285 },
+  { model: 'Toyota Aristo V300 (JZS161)', basePrice: 24000, perf: 280 },
 ];
-

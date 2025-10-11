@@ -16,6 +16,7 @@ export function getIconSVG(name) {
     case 'garage': return wrap('🏠');
     case 'parts': return wrap('🧩');
     case 'race': return wrap('🏁');
+    case 'trophy': return wrap('🏆');
     case 'chart': return wrap('📈');
     case 'calendar': return wrap('📅');
     case 'refresh': return wrap('🔄');
@@ -167,10 +168,10 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   const div1 = document.createElement('div');
   div1.className = 'divider';
   pop.appendChild(div1);
-  // New Game
+  // Back to main menu
   const newBtn = document.createElement('button');
   newBtn.className = 'btn warn';
-  newBtn.textContent = 'New Game';
+  newBtn.textContent = 'Back to Main Menu';
   newBtn.onclick = () => { onNewGame(); onHideOptions(); };
   pop.appendChild(newBtn);
   // Divider
@@ -427,22 +428,13 @@ const failedImgCache = new Set();
 
 export function renderCarBreakdown({ car, idx, state, PARTS, modelId }) {
   const box = el('div', { class: 'car-breakdown' });
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 600 260');
-  svg.setAttribute('class', 'car-silhouette');
-  const group = document.createElementNS(svgNS, 'g');
-  group.setAttribute('class', 'car-group');
-  group.setAttribute('transform', 'translate(60,18) scale(0.78)');
-  const path = document.createElementNS(svgNS, 'path');
-  path.setAttribute('class', 'silhouette-path');
-  const body = getBodyStyle(car.model);
-  path.setAttribute('d', getSilhouettePath(body));
   let imgSrc = state.assets && state.assets.modelImages && state.assets.modelImages[car.model];
   const slug = modelId(car.model);
   const styleSlug = '_' + getBodyStyle(car.model);
   const candidates = [
     imgSrc,
+    'Assets/Cars/default_Car.png',
+    'assets/cars/default_Car.png',
     `Assets/Cars/${styleSlug}.svg`,
     `assets/cars/${styleSlug}.svg`,
     `Assets/Cars/${slug}.svg`,
@@ -463,9 +455,6 @@ export function renderCarBreakdown({ car, idx, state, PARTS, modelId }) {
     };
     box.appendChild(img);
   }
-  group.appendChild(path);
-  svg.appendChild(group);
-  box.appendChild(svg);
   return box;
 }
 
@@ -506,7 +495,7 @@ export function layoutCarBreakdown(container) {
   } catch {}
 }
 
-export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition, conditionStatus, isCarOpen, onToggleCarOpen, isSellConfirm, onSellClickById, onRaceCar, onOpenImagePicker, onRepairCar, garageCapacity, nextGarageCost, onBuyGarageSlot, saveState }) {
+export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition, conditionStatus, isCarOpen, onToggleCarOpen, isSellConfirm, onSellClickById, onRaceCar, onOpenImagePicker, onRepairCar, tuningOptions = [], onTuneUp, onResetTuning, garageCapacity, nextGarageCost, onBuyGarageSlot, saveState }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
   const capUsed = state.garage.length;
@@ -528,6 +517,51 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     view.appendChild(el('div', { class: 'panel notice', text: 'No cars yet. Buy from the Illegal Market.' }));
     return;
   }
+
+  const tuningEnabled = Array.isArray(tuningOptions) && tuningOptions.length;
+
+  const buildTuningPanel = (car, idx) => {
+    if (!tuningEnabled) return null;
+    const money = typeof state.money === 'number' ? state.money : 0;
+    const panel = el('div', { class: 'tuning-panel' });
+    const totalBonus = Math.round(car.tuningBonus || 0);
+    panel.appendChild(el('div', { class: 'tuning-header' }, [
+      el('strong', { text: 'Performance Tuning' }),
+      el('span', { class: 'tag info', text: `${totalBonus >= 0 ? '+' : ''}${totalBonus} Perf` }),
+    ]));
+    tuningOptions.forEach((option) => {
+      const level = car.tuning && typeof car.tuning[option.key] === 'number' ? car.tuning[option.key] : 0;
+      const stage = option.stages[Math.min(option.stages.length - 1, Math.max(0, level))];
+      const next = level >= option.stages.length - 1 ? null : option.stages[level + 1];
+      const row = el('div', { class: 'tuning-row' });
+      row.appendChild(el('div', { class: 'tuning-info' }, [
+        el('div', { class: 'tuning-name', text: `${option.icon ? option.icon + ' ' : ''}${option.name}` }),
+        el('div', { class: 'tuning-meta', text: `${stage.label} • +${stage.bonus} Perf` }),
+        option.description ? el('div', { class: 'tuning-desc subtle', text: option.description }) : null,
+      ].filter(Boolean)));
+      const controls = el('div', { class: 'tuning-controls' });
+      if (next) {
+        const btn = el('button', {
+          class: 'btn sm primary',
+          text: `Tune (${fmt.format(next.cost)})`,
+          disabled: money < next.cost || !onTuneUp,
+          onclick: () => onTuneUp && onTuneUp(idx, option.key),
+        });
+        controls.appendChild(btn);
+      } else {
+        controls.appendChild(el('span', { class: 'tag ok', text: 'Maxed' }));
+      }
+      controls.appendChild(el('button', {
+        class: 'btn sm',
+        text: 'Reset',
+        disabled: level === 0 || !onResetTuning,
+        onclick: () => onResetTuning && onResetTuning(idx, option.key),
+      }));
+      row.appendChild(controls);
+      panel.appendChild(row);
+    });
+    return panel;
+  };
 
   // Helper for callout rows
   const badgeCls = (v) => v >= 70 ? 'ok' : v >= 50 ? 'info' : 'bad';
@@ -568,7 +602,7 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     // Build breakdown with silhouette and action callouts
     const box = renderCarBreakdown({ car, idx, state, PARTS, modelId });
     // Engine callouts
-    const engine = el('div', { class: 'callout', style: 'left:2%; top:12%;'}, [ el('div', { class: 'title' }, [ el('span', { text: 'Engine' }) ]) ]);
+    const engine = el('div', { class: 'callout callout-engine' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Engine' }) ]) ]);
     addRow(engine, 'Engine Block', 'engine_block', car.id, idx);
     addRow(engine, 'Induction', 'induction', car.id, idx);
     addRow(engine, 'Fuel System', 'fuel_system', car.id, idx);
@@ -580,14 +614,14 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     box.appendChild(engine);
 
     // Drivetrain
-    const drive = el('div', { class: 'callout', style: 'left:42%; top:4%;'}, [ el('div', { class: 'title' }, [ el('span', { text: 'Drivetrain' }) ]) ]);
+    const drive = el('div', { class: 'callout callout-drive' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Drivetrain' }) ]) ]);
     addRow(drive, 'Transmission', 'transmission', car.id, idx);
     addRow(drive, 'Clutch', 'clutch', car.id, idx);
     addRow(drive, 'Differential', 'differential', car.id, idx);
     box.appendChild(drive);
 
     // Running gear
-    const running = el('div', { class: 'callout', style: 'right:2%; top:10%;'}, [ el('div', { class: 'title' }, [ el('span', { text: 'Running Gear' }) ]) ]);
+    const running = el('div', { class: 'callout callout-running' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Running Gear' }) ]) ]);
     addRow(running, 'Suspension', 'suspension', car.id, idx);
     addRow(running, 'Tires', 'tires', car.id, idx);
     addRow(running, 'Brakes', 'brakes', car.id, idx);
@@ -596,7 +630,10 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     addRow(running, 'Interior Elec.', 'electronics', car.id, idx);
     box.appendChild(running);
 
-    const collapsible = el('div', { class: 'collapsible ' + (isCarOpen(car.id) ? 'open' : '') }, [ el('div', { class: 'content' }, [box]) ]);
+    const tuningPanel = buildTuningPanel(car, idx);
+    const contentChildren = [box];
+    if (tuningPanel) contentChildren.push(tuningPanel);
+    const collapsible = el('div', { class: 'collapsible ' + (isCarOpen(car.id) ? 'open' : '') }, [ el('div', { class: 'content' }, contentChildren) ]);
 
     const sellBtn = el('button', { class: 'btn danger', text: isSellConfirm(car.id) ? 'Are you sure?' : 'Sell' });
     sellBtn.onclick = () => onSellClickById(car.id, sellBtn);
@@ -658,79 +695,244 @@ export function updatePartsPricesUI({ state, PARTS, fmt }) {
   });
 }
 
-export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt }) {
+export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt, mode = 'street', leagueData = [], leagueState = null, onLeagueRace = null, onLeagueReset = null }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
-  const header = el('div', { class: 'panel' }, [
-    el('div', { class: 'row' }, [
-      el('h3', { text: 'Street Race Events' }),
-      el('div', { class: 'spacer' }),
-      el('span', { class: 'tag info', text: 'Choose an event' })
-    ])
-  ]);
-  view.appendChild(header);
+  const layout = el('div', { class: 'races-layout' });
 
-  const grid = el('div', { class: 'race-events-grid' });
-  RACE_EVENTS.forEach(event => {
-    const suitableCar = state.garage.find(c => canRace(c) && c.perf >= event.opponentPerf - 15);
-    const carOptions = state.garage.filter(c => canRace(c));
-
-    const carSwitcher = el('div', { class: 'car-switcher' });
-    if (carOptions.length > 0) {
-      const carDisplay = el('span', { class: 'car-display', text: `${carOptions[0].model} (P:${carOptions[0].perf})` });
-      carSwitcher.setAttribute('data-selected-car-idx', '0');
-
-      const prevBtn = el('button', { class: 'arrow', text: '‹' });
-      const nextBtn = el('button', { class: 'arrow', text: '›' });
-
-      const switchCar = (dir) => {
-        let currentIdx = parseInt(carSwitcher.getAttribute('data-selected-car-idx'), 10);
-        currentIdx = (currentIdx + dir + carOptions.length) % carOptions.length;
-        const selectedCar = carOptions[currentIdx];
-        carDisplay.textContent = `${selectedCar.model} (P:${selectedCar.perf})`;
-        carSwitcher.setAttribute('data-selected-car-idx', String(currentIdx));
-      };
-
-      prevBtn.onclick = () => switchCar(-1);
-      nextBtn.onclick = () => switchCar(1);
-
-      carSwitcher.appendChild(prevBtn);
-      carSwitcher.appendChild(carDisplay);
-      carSwitcher.appendChild(nextBtn);
-    } else {
-      carSwitcher.appendChild(el('span', { class: 'car-display subtle', text: 'No cars available' }));
-    }
-
-    const isDisabled = !suitableCar;
-    const card = el('div', { class: 'panel event-card' + (isDisabled ? ' disabled' : '') }, [
-      el('div', { class: `event-card-track track-${event.trackType}` }, [
-        el('h4', { text: event.name })
-      ]),
-      el('div', { class: 'event-card-body' }, [
-        el('div', { class: 'event-details-grid' }, [
-          el('div', { class: 'detail-item' }, [el('span', { class: 'subtle' }, ['Opponent Perf']), el('strong', { text: String(event.opponentPerf) })]),
-          el('div', { class: 'detail-item' }, [el('span', { class: 'subtle' }, ['Entry Fee']), el('strong', { text: fmt.format(event.entryFee) })]),
-          el('div', { class: 'detail-item prize' }, [el('span', { class: 'subtle' }, ['Prize']), el('strong', { class: 'good', text: fmt.format(event.prize) })]),
-        ]),
-        el('div', { class: 'event-actions' }, [
-          carSwitcher,
-          el('button', { class: 'btn good', text: 'Enter Race', onclick: (e) => {
-              const switcher = e.target.closest('.event-card').querySelector('.car-switcher');
-              const selectedCarOptionIndex = parseInt(switcher.getAttribute('data-selected-car-idx'), 10);
-              const selectedCar = carOptions[selectedCarOptionIndex];
-              if (!selectedCar) return;
-              const originalGarageIndex = state.garage.findIndex(c => c.id === selectedCar.id);
-              if (originalGarageIndex !== -1) onRaceCar(originalGarageIndex, event.id);
-          }, disabled: isDisabled })
-        ]),
-        isDisabled ? el('div', { class: 'event-locked-msg' }, [
-          '🔒 No eligible cars available for this event.'
-        ]) : null
+  if (mode === 'street' || mode === 'both') {
+    const streetSection = el('div', { class: 'races-section' });
+    const header = el('div', { class: 'panel' }, [
+      el('div', { class: 'row' }, [
+        el('h3', { text: 'Street Race Events' }),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'tag info', text: 'Choose an event' })
       ])
     ]);
-    grid.appendChild(card);
+    streetSection.appendChild(header);
+
+    const grid = el('div', { class: 'race-events-grid' });
+    RACE_EVENTS.forEach(event => {
+      const suitableCar = state.garage.find(c => canRace(c) && c.perf >= event.opponentPerf - 15);
+      const carOptions = state.garage.filter(c => canRace(c));
+
+      const carSwitcher = el('div', { class: 'car-switcher' });
+      if (carOptions.length > 0) {
+        const carDisplay = el('span', { class: 'car-display', text: `${carOptions[0].model} (P:${carOptions[0].perf})` });
+        carSwitcher.setAttribute('data-selected-car-idx', '0');
+
+        const prevBtn = el('button', { class: 'arrow', text: '‹' });
+        const nextBtn = el('button', { class: 'arrow', text: '›' });
+
+        const switchCar = (dir) => {
+          let currentIdx = parseInt(carSwitcher.getAttribute('data-selected-car-idx'), 10);
+          currentIdx = (currentIdx + dir + carOptions.length) % carOptions.length;
+          const selectedCar = carOptions[currentIdx];
+          carDisplay.textContent = `${selectedCar.model} (P:${selectedCar.perf})`;
+          carSwitcher.setAttribute('data-selected-car-idx', String(currentIdx));
+        };
+
+        prevBtn.onclick = () => switchCar(-1);
+        nextBtn.onclick = () => switchCar(1);
+
+        carSwitcher.appendChild(prevBtn);
+        carSwitcher.appendChild(carDisplay);
+        carSwitcher.appendChild(nextBtn);
+      } else {
+        carSwitcher.appendChild(el('span', { class: 'car-display subtle', text: 'No cars available' }));
+      }
+
+      const isDisabled = !suitableCar;
+      const card = el('div', { class: 'panel event-card' + (isDisabled ? ' disabled' : '') }, [
+        el('div', { class: `event-card-track track-${event.trackType}` }, [
+          el('h4', { text: event.name })
+        ]),
+        el('div', { class: 'event-card-body' }, [
+          el('div', { class: 'event-details-grid' }, [
+            el('div', { class: 'detail-item' }, [el('span', { class: 'subtle' }, ['Opponent Perf']), el('strong', { text: String(event.opponentPerf) })]),
+            el('div', { class: 'detail-item' }, [el('span', { class: 'subtle' }, ['Entry Fee']), el('strong', { text: fmt.format(event.entryFee) })]),
+            el('div', { class: 'detail-item prize' }, [el('span', { class: 'subtle' }, ['Prize']), el('strong', { class: 'good', text: fmt.format(event.prize) })]),
+          ]),
+          el('div', { class: 'event-actions' }, [
+            carSwitcher,
+            el('button', { class: 'btn good', text: 'Enter Race', onclick: (e) => {
+                const switcher = e.target.closest('.event-card').querySelector('.car-switcher');
+                const selectedCarOptionIndex = parseInt(switcher.getAttribute('data-selected-car-idx'), 10);
+                const selectedCar = carOptions[selectedCarOptionIndex];
+                if (!selectedCar) return;
+                const originalGarageIndex = state.garage.findIndex(c => c.id === selectedCar.id);
+                if (originalGarageIndex !== -1) onRaceCar(originalGarageIndex, event.id);
+            }, disabled: isDisabled })
+          ]),
+          isDisabled ? el('div', { class: 'event-locked-msg' }, [
+            '🔒 No eligible cars available for this event.'
+          ]) : null
+        ])
+      ]);
+      grid.appendChild(card);
+    });
+    streetSection.appendChild(grid);
+    layout.appendChild(streetSection);
+  }
+
+  if ((mode === 'league' || mode === 'both') && Array.isArray(leagueData) && leagueData.length) {
+    layout.appendChild(renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState }));
+  }
+
+  view.appendChild(layout);
+}
+
+function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState }) {
+  const section = el('div', { class: 'races-section league-section' });
+  const league = leagueState || {};
+  const rankCount = leagueData.length;
+  const rankIndex = Math.min(rankCount - 1, Math.max(0, league.rank || 0));
+  const currentRank = leagueData[rankIndex];
+  const opponents = currentRank?.opponents || [];
+  const rankComplete = league.match >= opponents.length;
+  const champion = !!league.champion && rankIndex === rankCount - 1 && rankComplete;
+
+  const headerRow = el('div', { class: 'row' }, [
+    el('div', { class: 'league-heading' }, [
+      el('h3', { text: `Rank ${rankIndex + 1}/${rankCount} — ${currentRank?.name || 'Unknown Rank'}` }),
+      currentRank?.description ? el('div', { class: 'league-subtitle', text: currentRank.description }) : null,
+    ].filter(Boolean)),
+    el('div', { class: 'spacer' }),
+    el('span', { class: 'tag', text: `Season ${league.season || 1}` }),
+    el('span', { class: 'tag info', text: `${Math.min(league.match || 0, opponents.length)}/${opponents.length} wins` }),
+    champion ? el('span', { class: 'tag ok', text: 'Champion' }) : null,
+  ]);
+
+  const progress = el('div', { class: 'league-progress' }, opponents.map((opponent, idx) => {
+    const status = idx < (league.match || 0) ? 'completed' : (idx === (league.match || 0) ? 'current' : 'upcoming');
+    return el('div', { class: `league-progress-item ${status}` }, [
+      el('div', { class: 'name', text: opponent.name }),
+      el('div', { class: 'perf', text: `Perf ${opponent.perf}` }),
+    ]);
+  }));
+
+  const upcoming = rankComplete ? null : opponents[league.match || 0];
+  const infoGrid = upcoming ? el('div', { class: 'league-details' }, [
+    el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Next Opponent' }), el('strong', { text: upcoming.name }) ]),
+    el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Performance' }), el('strong', { text: String(upcoming.perf) }) ]),
+    el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Payout' }), el('strong', { class: 'good', text: fmt.format(upcoming.reward) }) ]),
+    el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Heat' }), el('strong', { text: `${upcoming.heat ?? currentRank?.heat ?? 4}` }) ]),
+  ]) : null;
+
+  const carOptions = state.garage.filter(c => canRace(c));
+  const carSwitcher = el('div', { class: 'car-switcher' });
+  if (carOptions.length) {
+    const carDisplay = el('span', { class: 'car-display', text: `${carOptions[0].model} (P:${carOptions[0].perf})` });
+    carSwitcher.setAttribute('data-selected-car-idx', '0');
+    const prevBtn = el('button', { class: 'arrow', text: '‹' });
+    const nextBtn = el('button', { class: 'arrow', text: '›' });
+    const switchCar = (dir) => {
+      let currentIdx = parseInt(carSwitcher.getAttribute('data-selected-car-idx'), 10);
+      currentIdx = (currentIdx + dir + carOptions.length) % carOptions.length;
+      const selectedCar = carOptions[currentIdx];
+      carDisplay.textContent = `${selectedCar.model} (P:${selectedCar.perf})`;
+      carSwitcher.setAttribute('data-selected-car-idx', String(currentIdx));
+    };
+    prevBtn.onclick = () => switchCar(-1);
+    nextBtn.onclick = () => switchCar(1);
+    carSwitcher.appendChild(prevBtn);
+    carSwitcher.appendChild(carDisplay);
+    carSwitcher.appendChild(nextBtn);
+  } else {
+    carSwitcher.appendChild(el('span', { class: 'car-display subtle', text: 'No cars available' }));
+  }
+
+  const actionRow = el('div', { class: 'league-actions' }, [
+    carSwitcher,
+    champion
+      ? el('button', {
+          class: 'btn primary',
+          text: 'Start New Season',
+          disabled: !onLeagueReset,
+          onclick: () => onLeagueReset && onLeagueReset(),
+        })
+      : el('button', {
+          class: 'btn good',
+          text: 'Challenge',
+          disabled: (!upcoming) || !carOptions.length || !onLeagueRace,
+          onclick: (e) => {
+            if (!carOptions.length || !onLeagueRace || !upcoming) return;
+            const switcher = e.target.closest('.league-actions').querySelector('.car-switcher');
+            const idx = parseInt(switcher.getAttribute('data-selected-car-idx'), 10);
+            const selectedCar = carOptions[idx];
+            if (!selectedCar) return;
+            const original = state.garage.findIndex(c => c.id === selectedCar.id);
+            if (original !== -1) onLeagueRace(original);
+          }
+        })
+  ]);
+
+  const trophyRow = el('div', { class: 'league-trophy' }, [
+    el('span', { class: 'label', text: 'Rank Trophy' }),
+    el('strong', { text: fmt.format(currentRank?.trophyReward || 0) }),
+    el('span', { class: 'label', text: 'XP' }),
+    el('strong', { text: `+${currentRank?.trophyXp || 0}` }),
+  ]);
+
+  const championMsg = champion ? el('div', { class: 'league-champion-msg', text: 'Midnight League complete — enjoy the rewards!' }) : null;
+
+  const treeTrack = el('div', { class: 'league-tree-track' });
+  const treeList = el('div', { class: 'league-tree-list' });
+  treeTrack.appendChild(treeList);
+
+  treeList.addEventListener('pointerdown', (event) => {
+    treeList.classList.add('dragging');
+    const startX = event.clientX;
+    const startScroll = treeTrack.scrollLeft;
+    const onMove = (e) => {
+      const dx = e.clientX - startX;
+      treeTrack.scrollLeft = startScroll - dx;
+    };
+    const onUp = () => {
+      treeList.classList.remove('dragging');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
   });
-  view.appendChild(grid);
+
+
+  leagueData.forEach((rankDef, idx) => {
+    const status = idx < rankIndex ? 'done' : idx === rankIndex ? 'current' : 'upcoming';
+    const completed = Array.isArray(league.completedRanks) && league.completedRanks.includes(rankDef.id);
+    const minPerf = Math.min(...(rankDef.opponents || []).map(o => o.perf));
+    const maxPerf = Math.max(...(rankDef.opponents || []).map(o => o.perf));
+    const node = el('div', { class: `league-tree-item ${status} ${completed ? 'done' : ''}` }, [
+      el('div', { class: 'tree-label', text: rankDef.name }),
+      el('div', { class: 'tree-sub', text: isFinite(minPerf) && isFinite(maxPerf) ? `Perf ${minPerf}–${maxPerf}` : 'Perf ?' }),
+      el('div', { class: 'tree-reward', text: `${fmt.format(rankDef.trophyReward || 0)} • +${rankDef.trophyXp || 0} XP` }),
+    ]);
+    const connector = idx < leagueData.length - 1 ? el('div', { class: 'tree-connector' }) : null;
+    treeList.appendChild(node);
+    if (connector) treeList.appendChild(connector);
+  });
+
+  const treePanel = el('div', { class: 'panel league-tree' }, [
+    el('div', { class: 'tree-header-row' }, [
+      el('h4', { text: 'Rank Progression' }),
+      el('span', { class: 'tree-hint', text: 'Drag to scroll' }),
+    ]),
+    treeTrack,
+  ]);
+
+  const panel = el('div', { class: 'panel league-panel' }, [
+    headerRow,
+    progress,
+    infoGrid,
+    trophyRow,
+    actionRow,
+    championMsg,
+  ].filter(Boolean));
+
+  section.appendChild(panel);
+  section.appendChild(treePanel);
+  return section;
 }
 
 export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar, isSellConfirm, onSellClickById }) {
