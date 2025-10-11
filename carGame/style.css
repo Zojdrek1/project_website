@@ -1505,20 +1505,79 @@ body {
 }
 .garage-header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.garage-header h3 { margin: 0; font-size: 18px; }
+.garage-header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.garage-header .header-left .tag { margin: 0; }
+.garage-header .header-right {
+  display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-.garage-header h3 { margin-right: 6px; }
-.garage-header .tag { margin-right: 2px; }
-.garage-card .toggle { margin-left: auto; }
-.garage-actions {
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(120, 160, 255, 0.08);
+.garage-header .header-right .tag { margin: 0; }
+.garage-header .header-metrics {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
-.garage-actions .btn { min-width: 110px; }
+.garage-header .btn-toggle { min-width: 120px; }
+.garage-header .btn-sell { min-width: 110px; }
+.garage-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 12px;
+}
+.garage-card .collapsible { margin-top: 0; }
+.garage-card .collapsible .content {
+  overflow: hidden;
+  max-height: 0;
+  padding-top: 0;
+  transition: max-height 240ms ease, padding-top 240ms ease;
+}
+.garage-card .collapsible.open {
+  border-top: 1px solid rgba(120, 160, 255, 0.08);
+  padding-top: 0;
+}
+.garage-card .collapsible.open .content {
+  max-height: 1200px;
+  padding-top: 12px;
+}
+.tag.metric {
+  border-color: rgba(120, 160, 255, 0.18);
+  background: linear-gradient(180deg, rgba(35,54,78,0.85), rgba(18,28,44,0.9));
+}
+.tag.metric.metric-perf {
+  background: linear-gradient(180deg, #11324d, #0b2538);
+  border-color: rgba(90, 160, 255, 0.3);
+  color: #d6edff;
+}
+.tag.metric.metric-value {
+  background: linear-gradient(180deg, #12351f, #0d2616);
+  border-color: rgba(76, 180, 120, 0.35);
+  color: #d9f6e2;
+}
+.tag.metric.metric-profit-up {
+  background: linear-gradient(180deg, #154224, #0f2d18);
+  border-color: rgba(76, 180, 120, 0.4);
+  color: #d9f6e2;
+}
+.tag.metric.metric-profit-down {
+  background: linear-gradient(180deg, #441e1e, #2c1313);
+  border-color: rgba(255, 120, 120, 0.35);
+  color: #ffd7d7;
+}
 .panel:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 @keyframes panelIn { from { opacity: 0; transform: translateY(4px);} }
 

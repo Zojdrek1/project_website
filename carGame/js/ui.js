@@ -706,35 +706,62 @@ export function renderGarageCarsSection({
     const val = Math.max(0, Math.round(car.valuation ?? car.basePrice ?? 0));
     const profit = val - (car.boughtPrice ?? 0);
 
-    const header = el('div', { class: 'row garage-header' }, [
-      el('h3', { text: `${car.model} ` }),
-      el('span', { class: `tag ${st.cls}`, text: st.label + ` (${avg}%)` }),
-      el('div', { class: 'spacer' }),
-      el('span', { class: 'tag info', text: `Perf ${car.perf}` }),
-      el('span', { class: 'tag ok', text: fmt.format(val) }),
-      el('span', { class: profit >= 0 ? 'tag ok' : 'tag bad', text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` }),
-      el('button', { class: 'btn ghost', text: isCarOpen(car.id) ? 'Collapse' : 'Expand', onclick: () => onToggleCarOpen && onToggleCarOpen(car.id) }),
+    const headerLeft = el('div', { class: 'header-left' }, [
+      el('h3', { text: car.model }),
+      el('span', { class: `tag ${st.cls}`, text: `${st.label} (${avg}%)` }),
     ]);
+
+    const perfTag = el('span', { class: 'tag metric metric-perf', text: `Perf ${car.perf}` });
+    const valueTag = el('span', { class: 'tag metric metric-value', text: `Val ${fmt.format(val)}` });
+    const profitClass = profit >= 0 ? 'metric-profit-up' : 'metric-profit-down';
+    const profitTag = el('span', { class: `tag metric ${profitClass}`, text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` });
+    const metricsGroup = el('div', { class: 'header-metrics' }, [perfTag, valueTag, profitTag]);
+
+    const confirming = isSellConfirm && isSellConfirm(car.id);
+    const sellBtn = el('button', { class: 'btn danger btn-sell' + (confirming ? ' warn' : ''), text: confirming ? 'Are you sure?' : 'Sell' });
+    sellBtn.onclick = () => onSellClickById && onSellClickById(car.id, sellBtn);
+    const toggleBtn = el('button', { class: 'btn ghost btn-toggle', text: isCarOpen(car.id) ? 'Hide Details ▴' : 'Show Details ▾', onclick: () => onToggleCarOpen && onToggleCarOpen(car.id) });
+    const headerRight = el('div', { class: 'header-right' }, [metricsGroup, sellBtn, toggleBtn]);
+
+    const header = el('div', { class: 'garage-header' }, [headerLeft, headerRight]);
 
     const breakdown = renderCarBreakdown({ car, idx, state, PARTS, modelId });
 
-    const partsBox = el('div', { class: 'parts-box' });
-    PARTS.forEach(part => addPartRow(partsBox, part.name, part.key, car.id, idx));
+    // Build callout groups around the car silhouette
+    const engine = el('div', { class: 'callout callout-engine' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Engine' }) ]) ]);
+    addPartRow(engine, 'Engine Block', 'engine_block', car.id, idx);
+    addPartRow(engine, 'Induction (Turbo/Intake)', 'induction', car.id, idx);
+    addPartRow(engine, 'Fuel System', 'fuel_system', car.id, idx);
+    addPartRow(engine, 'Cooling (Radiator/Pump)', 'cooling', car.id, idx);
+    addPartRow(engine, 'Ignition (Coils/Plugs)', 'ignition', car.id, idx);
+    addPartRow(engine, 'Timing (Belt/Chain)', 'timing', car.id, idx);
+    addPartRow(engine, 'Alternator', 'alternator', car.id, idx);
+    addPartRow(engine, 'ECU/Sensors', 'ecu', car.id, idx);
+    breakdown.appendChild(engine);
+
+    const drive = el('div', { class: 'callout callout-drive' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Drivetrain' }) ]) ]);
+    addPartRow(drive, 'Transmission', 'transmission', car.id, idx);
+    addPartRow(drive, 'Clutch', 'clutch', car.id, idx);
+    addPartRow(drive, 'Differential', 'differential', car.id, idx);
+    breakdown.appendChild(drive);
+
+    const running = el('div', { class: 'callout callout-running' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Running Gear' }) ]) ]);
+    addPartRow(running, 'Suspension', 'suspension', car.id, idx);
+    addPartRow(running, 'Tires', 'tires', car.id, idx);
+    addPartRow(running, 'Brakes', 'brakes', car.id, idx);
+    addPartRow(running, 'Exhaust', 'exhaust', car.id, idx);
+    addPartRow(running, 'Battery', 'battery', car.id, idx);
+    addPartRow(running, 'Interior Electronics', 'electronics', car.id, idx);
+    breakdown.appendChild(running);
 
     const tuningPanel = buildTuningPanel(car, idx);
-    const contentChildren = [breakdown, partsBox];
+    const contentChildren = [breakdown];
     if (tuningPanel) contentChildren.push(tuningPanel);
     const collapsible = el('div', { class: 'collapsible ' + (isCarOpen(car.id) ? 'open' : ''), ['data-car-id']: car.id }, [
       el('div', { class: 'content' }, contentChildren),
     ]);
 
-    const sellBtn = el('button', { class: 'btn danger', text: isSellConfirm && isSellConfirm(car.id) ? 'Are you sure?' : 'Sell' });
-    sellBtn.onclick = () => onSellClickById && onSellClickById(car.id, sellBtn);
-    const raceBtn = el('button', { class: 'btn good', text: 'Race', onclick: () => onRaceCar && onRaceCar(idx) });
-    const photoBtn = el('button', { class: 'btn', text: 'Upload Photo', onclick: () => onOpenImagePicker && onOpenImagePicker(car.model) });
-    const actions = el('div', { class: 'row garage-actions' }, [ sellBtn, raceBtn, photoBtn ]);
-
-    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, collapsible, actions ]);
+    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, el('div', { class: 'card-body' }, [ collapsible ]) ]);
     container.appendChild(card);
   }
 
@@ -780,142 +807,29 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
   }
 
   const cardsContainer = el('div', { class: 'garage-cards', ['data-section']: 'garage-cars' });
-
-  const tuningEnabled = Array.isArray(tuningOptions) && tuningOptions.length;
-
-  const buildTuningPanel = (car, idx) => {
-    if (!tuningEnabled) return null;
-    const money = typeof state.money === 'number' ? state.money : 0;
-    const panel = el('div', { class: 'tuning-panel' });
-    const totalBonus = Math.round(car.tuningBonus || 0);
-    panel.appendChild(el('div', { class: 'tuning-header' }, [
-      el('strong', { text: 'Performance Tuning' }),
-      el('span', { class: 'tag info', text: `${totalBonus >= 0 ? '+' : ''}${totalBonus} Perf` }),
-    ]));
-    tuningOptions.forEach((option) => {
-      const level = car.tuning && typeof car.tuning[option.key] === 'number' ? car.tuning[option.key] : 0;
-      const stage = option.stages[Math.min(option.stages.length - 1, Math.max(0, level))];
-      const next = level >= option.stages.length - 1 ? null : option.stages[level + 1];
-      const row = el('div', { class: 'tuning-row' });
-      row.appendChild(el('div', { class: 'tuning-info' }, [
-        el('div', { class: 'tuning-name', text: `${option.icon ? option.icon + ' ' : ''}${option.name}` }),
-        el('div', { class: 'tuning-meta', text: `${stage.label} • +${stage.bonus} Perf` }),
-        option.description ? el('div', { class: 'tuning-desc subtle', text: option.description }) : null,
-      ].filter(Boolean)));
-      const controls = el('div', { class: 'tuning-controls' });
-      if (next) {
-        const btn = el('button', {
-          class: 'btn sm primary',
-          text: `Tune (${fmt.format(next.cost)})`,
-          disabled: money < next.cost || !onTuneUp,
-          onclick: () => onTuneUp && onTuneUp(idx, option.key),
-        });
-        controls.appendChild(btn);
-      } else {
-        controls.appendChild(el('span', { class: 'tag ok', text: 'Maxed' }));
-      }
-      controls.appendChild(el('button', {
-        class: 'btn sm',
-        text: 'Reset',
-        disabled: level === 0 || !onResetTuning,
-        onclick: () => onResetTuning && onResetTuning(idx, option.key),
-      }));
-      row.appendChild(controls);
-      panel.appendChild(row);
-    });
-    return panel;
-  };
-
-  // Helper for callout rows
-  const badgeCls = (v) => v >= 70 ? 'ok' : v >= 50 ? 'info' : 'bad';
-  const addRow = (container, label, key, carId, idx) => {
-    const car = state.garage[idx];
-    const cond = Math.round(car.parts[key] ?? 100);
-    const open = isPartActionsOpenUI(state, carId, key);
-    const row = el('div', { class: 'row part' }, [
-      el('span', { text: label }),
-      el('div', { class: 'spacer' }),
-      (() => { const t = el('span', { class: 'part-toggle' + (open ? ' active' : ''), title: 'Repair', text: '🔧' }); t.onclick = () => togglePartActionsUI({ state, carId, key, toggleEl: t, saveState }); return t; })(),
-      el('span', { class: `pct-badge ${badgeCls(cond)}`, text: `${cond}%` }),
-    ]);
-    container.appendChild(row);
-    const actions = el('div', { class: 'part-actions', style: open && cond < 100 ? '' : 'display:none' }, [
-      el('button', { class: 'btn sm', ['data-gprice']: 'legal', ['data-part']: key, text: `Legal ${fmt.format(state.partsPrices.legal[key])}`, onclick: () => onRepairCar(idx, key, 'legal') }),
-      el('button', { class: 'btn warn sm', ['data-gprice']: 'illegal', ['data-part']: key, text: `Illegal ${fmt.format(state.partsPrices.illegal[key])}`, onclick: () => onRepairCar(idx, key, 'illegal') }),
-    ]);
-    actions.setAttribute('data-actions-for', `${carId}:${key}`);
-    container.appendChild(actions);
-  };
-
-  for (const [idx, car] of state.garage.entries()) {
-    const avg = Math.round(avgCondition(car));
-    const st = conditionStatus(avg);
-    const val = Math.max(0, Math.round(car.valuation ?? car.basePrice ?? 0));
-    const profit = val - (car.boughtPrice ?? 0);
-    const header = el('div', { class: 'row garage-header' }, [
-      el('h3', { text: `${car.model} ` }),
-      el('span', { class: `tag ${st.cls}`, text: st.label + ` (${avg}%)` }),
-      el('div', { class: 'spacer' }),
-      el('span', { class: 'tag info', text: `Perf ${car.perf}` }),
-      el('span', { class: 'tag info', text: `Val ${fmt.format(val)}` }),
-      el('span', { class: `tag ${profit >= 0 ? 'ok' : 'bad'}`, text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` }),
-      (() => { const b = el('button', { class: 'toggle', text: isCarOpen(car.id) ? 'Hide Details ▴' : 'Show Details ▾' }); b.onclick = () => onToggleCarOpen(car.id); return b; })(),
-    ]);
-
-    // Build breakdown with silhouette and action callouts
-    const box = renderCarBreakdown({ car, idx, state, PARTS, modelId });
-    // Engine callouts
-    const engine = el('div', { class: 'callout callout-engine' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Engine' }) ]) ]);
-    addRow(engine, 'Engine Block', 'engine_block', car.id, idx);
-    addRow(engine, 'Induction', 'induction', car.id, idx);
-    addRow(engine, 'Fuel System', 'fuel_system', car.id, idx);
-    addRow(engine, 'Cooling', 'cooling', car.id, idx);
-    addRow(engine, 'Ignition', 'ignition', car.id, idx);
-    addRow(engine, 'Timing', 'timing', car.id, idx);
-    addRow(engine, 'Alternator', 'alternator', car.id, idx);
-    addRow(engine, 'ECU', 'ecu', car.id, idx);
-    box.appendChild(engine);
-
-    // Drivetrain
-    const drive = el('div', { class: 'callout callout-drive' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Drivetrain' }) ]) ]);
-    addRow(drive, 'Transmission', 'transmission', car.id, idx);
-    addRow(drive, 'Clutch', 'clutch', car.id, idx);
-    addRow(drive, 'Differential', 'differential', car.id, idx);
-    box.appendChild(drive);
-
-    // Running gear
-    const running = el('div', { class: 'callout callout-running' }, [ el('div', { class: 'title' }, [ el('span', { text: 'Running Gear' }) ]) ]);
-    addRow(running, 'Suspension', 'suspension', car.id, idx);
-    addRow(running, 'Tires', 'tires', car.id, idx);
-    addRow(running, 'Brakes', 'brakes', car.id, idx);
-    addRow(running, 'Exhaust', 'exhaust', car.id, idx);
-    addRow(running, 'Battery', 'battery', car.id, idx);
-    addRow(running, 'Interior Elec.', 'electronics', car.id, idx);
-    box.appendChild(running);
-
-    const tuningPanel = buildTuningPanel(car, idx);
-    const contentChildren = [box];
-    if (tuningPanel) contentChildren.push(tuningPanel);
-    const collapsible = el('div', { class: 'collapsible ' + (isCarOpen(car.id) ? 'open' : '') }, [ el('div', { class: 'content' }, contentChildren) ]);
-
-    const sellBtn = el('button', { class: 'btn danger', text: isSellConfirm(car.id) ? 'Are you sure?' : 'Sell' });
-    sellBtn.onclick = () => onSellClickById(car.id, sellBtn);
-    const raceBtn = el('button', { class: 'btn good', text: 'Race', onclick: () => onRaceCar(idx) });
-    const upBtn = el('button', { class: 'btn', text: 'Upload Photo', onclick: () => onOpenImagePicker(car.model) });
-    const actions = el('div', { class: 'row garage-actions' }, [ sellBtn, raceBtn, upBtn ]);
-
-    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, collapsible, actions ]);
-    cardsContainer.appendChild(card);
-  }
-
   view.appendChild(cardsContainer);
 
-  // Ensure breakdown heights
-  requestAnimationFrame(() => {
-    cardsContainer.querySelectorAll('.car-breakdown').forEach(layoutCarBreakdown);
+  renderGarageCarsSection({
+    container: cardsContainer,
+    state,
+    PARTS,
+    fmt,
+    modelId,
+    avgCondition,
+    conditionStatus,
+    isCarOpen,
+    onToggleCarOpen,
+    isSellConfirm,
+    onSellClickById,
+    onRaceCar,
+    onOpenImagePicker,
+    onRepairCar,
+    tuningOptions,
+    onTuneUp,
+    onResetTuning,
+    saveState,
   });
 }
-
 export function renderPartsView({ state, PARTS, fmt }) {
   const view = document.getElementById('view');
   view.innerHTML = '';

@@ -417,6 +417,7 @@ function buyCar(idx) {
   addXP(15, `Acquired ${car.model}`);
   saveState();
   refreshMarketUI();
+  refreshGarageUI();
 }
 
 function sellCar(garageIndex) {
@@ -912,6 +913,31 @@ function refreshGarageUI() {
     return;
   }
   const cards = document.querySelector('[data-section="garage-cars"]');
+  if (!cards) {
+    renderGarageFullView({
+      state,
+      PARTS,
+      fmt,
+      modelId,
+      avgCondition,
+      conditionStatus,
+      isCarOpen,
+      onToggleCarOpen: (id) => toggleCarOpen(id),
+      isSellConfirm,
+      onSellClickById,
+      onRaceCar: (idx) => raceCar(idx),
+      onOpenImagePicker: (m) => openImagePicker(m),
+      onRepairCar: (idx, key, source) => repairCar(idx, key, source),
+      tuningOptions: TUNING_OPTIONS,
+      onTuneUp: (idx, key) => upgradeCarTuning(idx, key),
+      onResetTuning: (idx, key) => resetCarTuning(idx, key),
+      garageCapacity,
+      nextGarageCost,
+      onBuyGarageSlot: () => buyGarageSlot(),
+      saveState: () => saveState(),
+    });
+    return;
+  }
   if (cards) {
     renderGarageCarsSection({
       container: cards,
@@ -972,11 +998,19 @@ function toggleCarOpen(id, { skipRefresh = false } = {}) {
   state.ui.openCars[id] = !state.ui.openCars[id];
   const collapsible = document.querySelector(`[data-garage-card="${id}"] .collapsible`);
   if (collapsible) {
-    collapsible.classList.toggle('open', !!state.ui.openCars[id]);
-    requestAnimationFrame(() => {
-      const container = collapsible.querySelector('.car-breakdown');
-      if (container) layoutCarBreakdown(container);
-    });
+    const open = !!state.ui.openCars[id];
+    collapsible.classList.toggle('open', open);
+    const toggleBtn = document.querySelector(`[data-garage-card="${id}"] .garage-header .btn-toggle`);
+    if (toggleBtn) toggleBtn.textContent = open ? 'Hide Details ▴' : 'Show Details ▾';
+    const breakdown = collapsible.querySelector('.car-breakdown');
+    if (breakdown) {
+      if (open) {
+        breakdown.style.height = '';
+        requestAnimationFrame(() => layoutCarBreakdown(breakdown));
+      } else {
+        breakdown.style.height = '0px';
+      }
+    }
   } else if (!skipRefresh) {
     refreshGarageUI();
   }
