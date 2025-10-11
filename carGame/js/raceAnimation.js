@@ -228,17 +228,22 @@ export function showRaceAnimation(car, event, outcome, done) {
         carEl.appendChild(sad);
         setTimeout(() => sad.remove(), 1800);
       }
+      let noteHtml = '';
+      if (event.resultNotes) {
+        if (outcome.win && event.resultNotes.win) noteHtml = `<div class="race-result-note">${event.resultNotes.win}</div>`;
+        else if (!outcome.win && event.resultNotes.loss) noteHtml = `<div class="race-result-note">${event.resultNotes.loss}</div>`;
+      }
       if (outcome.failedPart) {
         const partName = getPartName(outcome.failedPart);
-        result.innerHTML = `DNF — <span class=\"fail-part\">${partName}</span> failed! <span class=\"fail-emoji\">💥</span>`;
+        result.innerHTML = `DNF — <span class=\"fail-part\">${partName}</span> failed! <span class=\"fail-emoji\">💥</span>${noteHtml}`;
         result.style.color = '#ff4e4e';
       }
       else if (outcome.win) {
-        result.innerHTML = '<span class="race-win-text">Victory! 🎉</span>';
+        result.innerHTML = `<span class="race-win-text">Victory! 🎉</span>${noteHtml}`;
         result.style.color = '#5ed68a';
       }
       else {
-        result.innerHTML = '<span class="race-lose-text">Defeat <span class="fail-emoji">😞</span></span>';
+        result.innerHTML = `<span class="race-lose-text">Defeat <span class="fail-emoji">😞</span></span>${noteHtml}`;
         result.style.color = '#ff9e9e';
       }
     }, raceDuration + 200);

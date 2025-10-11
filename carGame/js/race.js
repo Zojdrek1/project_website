@@ -63,9 +63,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 40,
     heat: 3,
     opponents: [
-      { name: 'Harajuku Night Class', perf: 220, reward: 5000, xp: 16, heat: 2, trackType: 'straight' },
-      { name: 'Osaka Clubline', perf: 230, reward: 6500, xp: 18, heat: 2, trackType: 'industrial' },
-      { name: 'Shibuya Beacon Crew', perf: 240, reward: 8200, xp: 20, heat: 3, trackType: 'highway' },
+      { name: 'Harajuku Night Class', perf: 220, reward: 5000, entryFee: 1200, xp: 16, heat: 2, trackType: 'straight' },
+      { name: 'Osaka Clubline', perf: 230, reward: 6500, entryFee: 1600, xp: 18, heat: 2, trackType: 'industrial' },
+      { name: 'Shibuya Beacon Crew', perf: 240, reward: 8200, entryFee: 2000, xp: 20, heat: 3, trackType: 'highway' },
     ],
   },
   {
@@ -76,9 +76,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 55,
     heat: 3,
     opponents: [
-      { name: 'Team Apex Idol', perf: 245, reward: 9000, xp: 22, heat: 3, trackType: 'industrial' },
-      { name: 'Kyoto Trialrunners', perf: 255, reward: 10800, xp: 24, heat: 3, trackType: 'mountain' },
-      { name: 'Yokohama Slipstream', perf: 265, reward: 12600, xp: 26, heat: 3, trackType: 'straight' },
+      { name: 'Team Apex Idol', perf: 245, reward: 9000, entryFee: 2200, xp: 22, heat: 3, trackType: 'industrial' },
+      { name: 'Kyoto Trialrunners', perf: 255, reward: 10800, entryFee: 2700, xp: 24, heat: 3, trackType: 'mountain' },
+      { name: 'Yokohama Slipstream', perf: 265, reward: 12600, entryFee: 3200, xp: 26, heat: 3, trackType: 'straight' },
     ],
   },
   {
@@ -89,9 +89,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 65,
     heat: 4,
     opponents: [
-      { name: 'Aqua-Line Phantoms', perf: 270, reward: 13500, xp: 28, heat: 4, trackType: 'highway' },
-      { name: 'Tsukuba Outrunners', perf: 280, reward: 15000, xp: 30, heat: 4, trackType: 'industrial' },
-      { name: 'Chiba Express', perf: 292, reward: 17000, xp: 32, heat: 4, trackType: 'straight' },
+      { name: 'Aqua-Line Phantoms', perf: 270, reward: 13500, entryFee: 3400, xp: 28, heat: 4, trackType: 'highway' },
+      { name: 'Tsukuba Outrunners', perf: 280, reward: 15000, entryFee: 3800, xp: 30, heat: 4, trackType: 'industrial' },
+      { name: 'Chiba Express', perf: 292, reward: 17000, entryFee: 4200, xp: 32, heat: 4, trackType: 'straight' },
     ],
   },
   {
@@ -102,9 +102,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 78,
     heat: 4,
     opponents: [
-      { name: 'Mt. Myogi Alliance', perf: 300, reward: 19000, xp: 36, heat: 4, trackType: 'mountain' },
-      { name: 'Akagi Red Suns', perf: 308, reward: 21000, xp: 38, heat: 4, trackType: 'mountain' },
-      { name: 'Hakone Apex Pack', perf: 314, reward: 23500, xp: 40, heat: 5, trackType: 'mountain' },
+      { name: 'Mt. Myogi Alliance', perf: 300, reward: 19000, entryFee: 4800, xp: 36, heat: 4, trackType: 'mountain' },
+      { name: 'Akagi Red Suns', perf: 308, reward: 21000, entryFee: 5200, xp: 38, heat: 4, trackType: 'mountain' },
+      { name: 'Hakone Apex Pack', perf: 314, reward: 23500, entryFee: 5900, xp: 40, heat: 5, trackType: 'mountain' },
     ],
   },
   {
@@ -115,9 +115,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 92,
     heat: 5,
     opponents: [
-      { name: 'Boost Junkies', perf: 320, reward: 26000, xp: 42, heat: 5, trackType: 'industrial' },
-      { name: 'Twin Scroll Syndicate', perf: 328, reward: 28000, xp: 44, heat: 5, trackType: 'straight' },
-      { name: 'Lag Killers Garage', perf: 334, reward: 30500, xp: 46, heat: 5, trackType: 'highway' },
+      { name: 'Boost Junkies', perf: 320, reward: 26000, entryFee: 6500, xp: 42, heat: 5, trackType: 'industrial' },
+      { name: 'Twin Scroll Syndicate', perf: 328, reward: 28000, entryFee: 7000, xp: 44, heat: 5, trackType: 'straight' },
+      { name: 'Lag Killers Garage', perf: 334, reward: 30500, entryFee: 7600, xp: 46, heat: 5, trackType: 'highway' },
     ],
   },
   {
@@ -128,9 +128,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 108,
     heat: 5,
     opponents: [
-      { name: 'Ebisu Slidehouse', perf: 336, reward: 33000, xp: 48, heat: 5, trackType: 'mountain' },
-      { name: 'Saitama Smoke Circle', perf: 342, reward: 35600, xp: 50, heat: 5, trackType: 'industrial' },
-      { name: 'Gunma Drift Union', perf: 346, reward: 38200, xp: 52, heat: 5, trackType: 'mountain' },
+      { name: 'Ebisu Slidehouse', perf: 336, reward: 33000, entryFee: 8200, xp: 48, heat: 5, trackType: 'mountain' },
+      { name: 'Saitama Smoke Circle', perf: 342, reward: 35600, entryFee: 8900, xp: 50, heat: 5, trackType: 'industrial' },
+      { name: 'Gunma Drift Union', perf: 346, reward: 38200, entryFee: 9600, xp: 52, heat: 5, trackType: 'mountain' },
     ],
   },
   {
@@ -141,9 +141,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 126,
     heat: 6,
     opponents: [
-      { name: 'Okayama Time Attack', perf: 348, reward: 41000, xp: 54, heat: 6, trackType: 'industrial' },
-      { name: 'Fuji Grip Society', perf: 352, reward: 43800, xp: 56, heat: 6, trackType: 'straight' },
-      { name: 'Suzuka Apex Union', perf: 356, reward: 46800, xp: 58, heat: 6, trackType: 'mountain' },
+      { name: 'Okayama Time Attack', perf: 348, reward: 41000, entryFee: 10200, xp: 54, heat: 6, trackType: 'industrial' },
+      { name: 'Fuji Grip Society', perf: 352, reward: 43800, entryFee: 11000, xp: 56, heat: 6, trackType: 'straight' },
+      { name: 'Suzuka Apex Union', perf: 356, reward: 46800, entryFee: 11700, xp: 58, heat: 6, trackType: 'mountain' },
     ],
   },
   {
@@ -154,9 +154,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 145,
     heat: 6,
     opponents: [
-      { name: 'Shogun R&D', perf: 360, reward: 49800, xp: 60, heat: 6, trackType: 'industrial' },
-      { name: 'Osaka Works Racing', perf: 364, reward: 53000, xp: 62, heat: 6, trackType: 'highway' },
-      { name: 'Kyushu Race Bureau', perf: 368, reward: 56200, xp: 64, heat: 6, trackType: 'straight' },
+      { name: 'Shogun R&D', perf: 360, reward: 49800, entryFee: 12400, xp: 60, heat: 6, trackType: 'industrial' },
+      { name: 'Osaka Works Racing', perf: 364, reward: 53000, entryFee: 13200, xp: 62, heat: 6, trackType: 'highway' },
+      { name: 'Kyushu Race Bureau', perf: 368, reward: 56200, entryFee: 14000, xp: 64, heat: 6, trackType: 'straight' },
     ],
   },
   {
@@ -167,9 +167,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 165,
     heat: 7,
     opponents: [
-      { name: 'Bayshore Ghosts', perf: 372, reward: 59800, xp: 66, heat: 7, trackType: 'highway' },
-      { name: 'Expressway Dominion', perf: 376, reward: 63400, xp: 68, heat: 7, trackType: 'straight' },
-      { name: 'Shuto Midnight Circle', perf: 380, reward: 67200, xp: 70, heat: 7, trackType: 'highway' },
+      { name: 'Bayshore Ghosts', perf: 372, reward: 59800, entryFee: 15000, xp: 66, heat: 7, trackType: 'highway' },
+      { name: 'Expressway Dominion', perf: 376, reward: 63400, entryFee: 15800, xp: 68, heat: 7, trackType: 'straight' },
+      { name: 'Shuto Midnight Circle', perf: 380, reward: 67200, entryFee: 16800, xp: 70, heat: 7, trackType: 'highway' },
     ],
   },
   {
@@ -180,9 +180,9 @@ export const LEAGUE_RANKS = [
     trophyXp: 200,
     heat: 8,
     opponents: [
-      { name: 'Project Kaido', perf: 384, reward: 72000, xp: 72, heat: 8, trackType: 'mountain' },
-      { name: 'Emperor Works', perf: 388, reward: 76000, xp: 74, heat: 8, trackType: 'industrial' },
-      { name: 'Wangan Emissaries', perf: 392, reward: 82000, xp: 80, heat: 8, trackType: 'highway' },
+      { name: 'Project Kaido', perf: 384, reward: 72000, entryFee: 18000, xp: 72, heat: 8, trackType: 'mountain' },
+      { name: 'Emperor Works', perf: 388, reward: 76000, entryFee: 19000, xp: 74, heat: 8, trackType: 'industrial' },
+      { name: 'Wangan Emissaries', perf: 392, reward: 82000, entryFee: 20500, xp: 80, heat: 8, trackType: 'highway' },
     ],
   },
 ];

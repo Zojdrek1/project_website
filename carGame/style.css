@@ -1998,3 +1998,19 @@ input[type="range"]:disabled {
 .league-tree-item .tree-label { font-weight: 700; color: #cfe8ff; }
 .league-tree-item .tree-sub { font-size: 0.82rem; color: #92a2c6; letter-spacing: 0.01em; }
 .league-tree-item .tree-reward { font-size: 0.82rem; color: #8bdc9b; letter-spacing: 0.02em; }
+
+/* Center the footer to match the main content view */
+.content > footer {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.bmc-container {
+  text-align: center;
+  margin-top: 16px;
+}
+
+
+/* Footer styles from main site */
+footer{ color:#9a9a9a; font-size:12px; margin:22px 0 6px; text-align:center; }

@@ -400,6 +400,131 @@ export function renderMarketCondition(avg, level) {
   return el('span', { class: `tag ${cls}`, text: `Est ${low}–${high}%` });
 }
 
+export function renderMarketListingsSection({ container, state, PARTS, fmt, level, onBuyCar }) {
+  if (!container) return;
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  state.illegalMarket.forEach((car) => {
+    const avg = Math.round(PARTS.reduce((acc, part) => acc + (car.parts[part.key] ?? 100), 0) / PARTS.length);
+    const condNode = renderMarketCondition(avg, level);
+    const row = el('tr', { ['data-market-row']: car.id }, [
+      el('td', { text: car.model }),
+      el('td', { text: String(car.perf) }),
+      el('td', {}, [condNode]),
+      el('td', {}, [ el('span', { ['data-car-price']: car.id, text: fmt.format(car.price) }) ]),
+      el('td', {}, [ el('button', {
+        class: 'btn good',
+        text: 'Buy',
+        onclick: () => {
+          if (typeof onBuyCar === 'function') onBuyCar(car.id);
+        },
+      }) ]),
+    ]);
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+}
+
+export function renderMarketTrendsSection({ container, state, fmt }) {
+  if (!container) return;
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  state.illegalMarket.forEach((car) => {
+    const card = el('div', { class: 'panel', ['data-market-card']: car.id }, [
+      el('div', { class: 'row' }, [
+        el('strong', { text: car.model }),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'tag info', ['data-car-tprice']: car.id, text: fmt.format(car.price) }),
+      ]),
+      (() => {
+        const c = document.createElement('canvas');
+        c.width = 320; c.height = 80;
+        c.style.width = '100%';
+        c.style.height = '80px';
+        c.setAttribute('data-car-spark', car.id);
+        setTimeout(() => drawSparkline(c, car.priceHistory || [car.price], '#57b6ff'), 0);
+        return c;
+      })(),
+    ]);
+    frag.appendChild(card);
+  });
+  container.appendChild(frag);
+}
+
+export function renderMarketOwnedTrendsSection({ container, state, fmt, isSellConfirm, onSellClickById }) {
+  if (!container) return;
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  (state.garage || []).forEach((car) => {
+    const card = el('div', { class: 'panel', ['data-owned-card']: car.id }, [
+      el('div', { class: 'row' }, [
+        el('strong', { text: car.model }),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'tag ok', ['data-own-tprice']: car.id, text: fmt.format(car.valuation ?? 0) }),
+        (() => {
+          const profit = (car.valuation ?? 0) - (car.boughtPrice ?? 0);
+          const cls = profit >= 0 ? 'tag ok' : 'tag bad';
+          return el('span', { class: cls, ['data-own-pl']: car.id, text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` });
+        })(),
+        (() => {
+          const sellBtn = el('button', { class: 'btn danger', text: isSellConfirm && isSellConfirm(car.id) ? 'Are you sure?' : 'Sell' });
+          if (typeof onSellClickById === 'function') sellBtn.onclick = () => onSellClickById(car.id, sellBtn);
+          return sellBtn;
+        })(),
+      ]),
+      (() => {
+        const c = document.createElement('canvas');
+        c.width = 320; c.height = 80;
+        c.style.width = '100%';
+        c.style.height = '80px';
+        c.setAttribute('data-own-spark', car.id);
+        const pts = (car.valuationHistory && car.valuationHistory.length) ? car.valuationHistory : [(car.valuation ?? 0)];
+        setTimeout(() => drawSparkline(c, pts, '#7ee787'), 0);
+        return c;
+      })(),
+    ]);
+    frag.appendChild(card);
+  });
+  container.appendChild(frag);
+}
+
+export function renderMarketAllTrendsSection({ container, state, MODELS, fmt, modelId, ensureModelTrends }) {
+  if (!container) return;
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  const pinnedOrder = [];
+  for (const car of state.illegalMarket) if (!pinnedOrder.includes(car.model)) pinnedOrder.push(car.model);
+  const allModels = MODELS.map(m => m.model).filter(m => !pinnedOrder.includes(m));
+  const ordered = pinnedOrder.concat(allModels);
+  ensureModelTrends();
+  ordered.forEach((name) => {
+    const mid = modelId(name);
+    const m = MODELS.find(mm => mm.model === name);
+    const points = state.modelTrends[name] || [m ? m.basePrice : 0];
+    const curVal = points[points.length - 1] || (m ? m.basePrice : 0);
+    const pinned = pinnedOrder.includes(name);
+    const card = el('div', { class: 'panel', ['data-model-card']: mid }, [
+      el('div', { class: 'row' }, [
+        el('strong', { text: name }),
+        el('div', { class: 'spacer' }),
+        pinned ? el('span', { class: 'tag ok', text: 'In Shop' }) : el('span', { class: 'tag', text: 'Index' }),
+        el('span', { class: 'tag info', ['data-model-price']: mid, text: fmt.format(curVal) }),
+      ]),
+      (() => {
+        const c = document.createElement('canvas');
+        c.width = 320; c.height = 80;
+        c.style.width = '100%';
+        c.style.height = '80px';
+        c.setAttribute('data-model-spark', mid);
+        setTimeout(() => drawSparkline(c, points, '#9aa4ff'), 0);
+        return c;
+      })(),
+    ]);
+    frag.appendChild(card);
+  });
+  container.appendChild(frag);
+}
+
 // Body style helpers for silhouettes
 export function getBodyStyle(model) {
   const m = model.toLowerCase();
@@ -477,9 +602,145 @@ function togglePartActionsUI({ state, carId, key, toggleEl, saveState }) {
   if (actions) {
     actions.style.display = m[key] ? '' : 'none';
     const container = actions.closest('.car-breakdown');
-    if (container) layoutCarBreakdown(container);
+    if (container) {
+      requestAnimationFrame(() => layoutCarBreakdown(container));
+    }
   }
   saveState && saveState();
+}
+
+export function renderGarageCarsSection({
+  container,
+  state,
+  PARTS,
+  fmt,
+  modelId,
+  avgCondition,
+  conditionStatus,
+  isCarOpen,
+  onToggleCarOpen,
+  isSellConfirm,
+  onSellClickById,
+  onRaceCar,
+  onOpenImagePicker,
+  onRepairCar,
+  tuningOptions = [],
+  onTuneUp,
+  onResetTuning,
+  saveState,
+}) {
+  if (!container) return;
+  container.innerHTML = '';
+
+  const tuningEnabled = Array.isArray(tuningOptions) && tuningOptions.length;
+  const money = typeof state.money === 'number' ? state.money : 0;
+
+  const badgeCls = (v) => v >= 70 ? 'ok' : v >= 50 ? 'info' : 'bad';
+
+  const buildTuningPanel = (car, idx) => {
+    if (!tuningEnabled) return null;
+    const panel = el('div', { class: 'tuning-panel' });
+    const totalBonus = Math.round(car.tuningBonus || 0);
+    panel.appendChild(el('div', { class: 'tuning-header' }, [
+      el('strong', { text: 'Performance Tuning' }),
+      el('span', { class: 'tag info', text: `${totalBonus >= 0 ? '+' : ''}${totalBonus} Perf` }),
+    ]));
+    tuningOptions.forEach((option) => {
+      const level = car.tuning && typeof car.tuning[option.key] === 'number' ? car.tuning[option.key] : 0;
+      const stage = option.stages[Math.min(option.stages.length - 1, Math.max(0, level))];
+      const next = level >= option.stages.length - 1 ? null : option.stages[level + 1];
+      const row = el('div', { class: 'tuning-row' });
+      row.appendChild(el('div', { class: 'tuning-info' }, [
+        el('div', { class: 'tuning-name', text: `${option.icon ? option.icon + ' ' : ''}${option.name}` }),
+        el('div', { class: 'tuning-meta', text: `${stage.label} • +${stage.bonus} Perf` }),
+        option.description ? el('div', { class: 'tuning-desc subtle', text: option.description }) : null,
+      ].filter(Boolean)));
+      const controls = el('div', { class: 'tuning-controls' });
+      if (next) {
+        controls.appendChild(el('button', {
+          class: 'btn sm primary',
+          text: `Tune (${fmt.format(next.cost)})`,
+          disabled: money < next.cost || !onTuneUp,
+          onclick: () => onTuneUp && onTuneUp(idx, option.key),
+        }));
+      } else {
+        controls.appendChild(el('span', { class: 'tag ok', text: 'Maxed' }));
+      }
+      controls.appendChild(el('button', {
+        class: 'btn sm',
+        text: 'Reset',
+        disabled: level === 0 || !onResetTuning,
+        onclick: () => onResetTuning && onResetTuning(idx, option.key),
+      }));
+      row.appendChild(controls);
+      panel.appendChild(row);
+    });
+    return panel;
+  };
+
+  const addPartRow = (wrap, label, key, carId, idx) => {
+    const car = state.garage[idx];
+    const cond = Math.round(car.parts[key] ?? 100);
+    const open = isPartActionsOpenUI(state, carId, key);
+    const row = el('div', { class: 'row part' }, [
+      el('span', { text: label }),
+      el('div', { class: 'spacer' }),
+      (() => {
+        const t = el('span', { class: 'part-toggle' + (open ? ' active' : ''), title: 'Repair', text: '🔧' });
+        t.onclick = () => togglePartActionsUI({ state, carId, key, toggleEl: t, saveState });
+        return t;
+      })(),
+      el('span', { class: `pct-badge ${badgeCls(cond)}`, text: `${cond}%` }),
+    ]);
+    wrap.appendChild(row);
+    const actions = el('div', { class: 'part-actions', style: open && cond < 100 ? '' : 'display:none', ['data-actions-for']: `${carId}:${key}` }, [
+      el('button', { class: 'btn sm', ['data-gprice']: 'legal', ['data-part']: key, text: `Legal ${fmt.format(state.partsPrices.legal[key])}`, onclick: () => onRepairCar(idx, key, 'legal') }),
+      el('button', { class: 'btn warn sm', ['data-gprice']: 'illegal', ['data-part']: key, text: `Illegal ${fmt.format(state.partsPrices.illegal[key])}`, onclick: () => onRepairCar(idx, key, 'illegal') }),
+    ]);
+    wrap.appendChild(actions);
+  };
+
+  for (const [idx, car] of state.garage.entries()) {
+    const avg = Math.round(avgCondition(car));
+    const st = conditionStatus(avg);
+    const val = Math.max(0, Math.round(car.valuation ?? car.basePrice ?? 0));
+    const profit = val - (car.boughtPrice ?? 0);
+
+    const header = el('div', { class: 'row garage-header' }, [
+      el('h3', { text: `${car.model} ` }),
+      el('span', { class: `tag ${st.cls}`, text: st.label + ` (${avg}%)` }),
+      el('div', { class: 'spacer' }),
+      el('span', { class: 'tag info', text: `Perf ${car.perf}` }),
+      el('span', { class: 'tag ok', text: fmt.format(val) }),
+      el('span', { class: profit >= 0 ? 'tag ok' : 'tag bad', text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` }),
+      el('button', { class: 'btn ghost', text: isCarOpen(car.id) ? 'Collapse' : 'Expand', onclick: () => onToggleCarOpen && onToggleCarOpen(car.id) }),
+    ]);
+
+    const breakdown = renderCarBreakdown({ car, idx, state, PARTS, modelId });
+
+    const partsBox = el('div', { class: 'parts-box' });
+    PARTS.forEach(part => addPartRow(partsBox, part.name, part.key, car.id, idx));
+
+    const tuningPanel = buildTuningPanel(car, idx);
+    const contentChildren = [breakdown, partsBox];
+    if (tuningPanel) contentChildren.push(tuningPanel);
+    const collapsible = el('div', { class: 'collapsible ' + (isCarOpen(car.id) ? 'open' : ''), ['data-car-id']: car.id }, [
+      el('div', { class: 'content' }, contentChildren),
+    ]);
+
+    const sellBtn = el('button', { class: 'btn danger', text: isSellConfirm && isSellConfirm(car.id) ? 'Are you sure?' : 'Sell' });
+    sellBtn.onclick = () => onSellClickById && onSellClickById(car.id, sellBtn);
+    const raceBtn = el('button', { class: 'btn good', text: 'Race', onclick: () => onRaceCar && onRaceCar(idx) });
+    const photoBtn = el('button', { class: 'btn', text: 'Upload Photo', onclick: () => onOpenImagePicker && onOpenImagePicker(car.model) });
+    const actions = el('div', { class: 'row garage-actions' }, [ sellBtn, raceBtn, photoBtn ]);
+
+    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, collapsible, actions ]);
+    container.appendChild(card);
+  }
+
+  requestAnimationFrame(() => {
+    container.querySelectorAll('.car-breakdown').forEach(layoutCarBreakdown);
+  });
 }
 
 export function layoutCarBreakdown(container) {
@@ -505,11 +766,11 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     el('div', { class: 'row' }, [
       el('h3', { text: 'Storage' }),
       el('div', { class: 'spacer' }),
-      el('span', { class: 'tag info', text: `${capUsed}/${capMax} slots used` }),
+      el('span', { class: 'tag info', ['data-storage-tag']: 'garage', text: `${capUsed}/${capMax} slots used` }),
       el('span', { class: 'hidden', text: '' })
     ]),
     el('div', { class: 'row' }, [
-      el('button', { class: 'btn primary', text: `Buy Slot (${fmt.format(costNext)})`, onclick: () => onBuyGarageSlot(), disabled: false }),
+      el('button', { class: 'btn primary', ['data-storage-buy']: 'garage', text: `Buy Slot (${fmt.format(costNext)})`, onclick: () => onBuyGarageSlot(), disabled: false }),
     ]),
   ]);
   view.appendChild(capPanel);
@@ -517,6 +778,8 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     view.appendChild(el('div', { class: 'panel notice', text: 'No cars yet. Buy from the Illegal Market.' }));
     return;
   }
+
+  const cardsContainer = el('div', { class: 'garage-cards', ['data-section']: 'garage-cars' });
 
   const tuningEnabled = Array.isArray(tuningOptions) && tuningOptions.length;
 
@@ -641,13 +904,15 @@ export function renderGarageFullView({ state, PARTS, fmt, modelId, avgCondition,
     const upBtn = el('button', { class: 'btn', text: 'Upload Photo', onclick: () => onOpenImagePicker(car.model) });
     const actions = el('div', { class: 'row garage-actions' }, [ sellBtn, raceBtn, upBtn ]);
 
-    const card = el('div', { class: 'panel garage-card' }, [ header, collapsible, actions ]);
-    view.appendChild(card);
+    const card = el('div', { class: 'panel garage-card', ['data-garage-card']: car.id }, [ header, collapsible, actions ]);
+    cardsContainer.appendChild(card);
   }
+
+  view.appendChild(cardsContainer);
 
   // Ensure breakdown heights
   requestAnimationFrame(() => {
-    document.querySelectorAll('.car-breakdown').forEach(layoutCarBreakdown);
+    cardsContainer.querySelectorAll('.car-breakdown').forEach(layoutCarBreakdown);
   });
 }
 
@@ -695,7 +960,7 @@ export function updatePartsPricesUI({ state, PARTS, fmt }) {
   });
 }
 
-export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt, mode = 'street', leagueData = [], leagueState = null, onLeagueRace = null, onLeagueReset = null }) {
+export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt, mode = 'street', leagueData = [], leagueState = null, onLeagueRace = null, onLeagueReset = null, onDismissLeagueFlash = null }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
   const layout = el('div', { class: 'races-layout' });
@@ -776,13 +1041,13 @@ export function renderRacesView({ state, RACE_EVENTS, canRace, onRaceCar, fmt, m
   }
 
   if ((mode === 'league' || mode === 'both') && Array.isArray(leagueData) && leagueData.length) {
-    layout.appendChild(renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState }));
+    layout.appendChild(renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState, onDismissFlash: onDismissLeagueFlash }));
   }
 
   view.appendChild(layout);
 }
 
-function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState }) {
+function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, leagueData, leagueState, onDismissFlash = null }) {
   const section = el('div', { class: 'races-section league-section' });
   const league = leagueState || {};
   const rankCount = leagueData.length;
@@ -800,6 +1065,7 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
     el('div', { class: 'spacer' }),
     el('span', { class: 'tag', text: `Season ${league.season || 1}` }),
     el('span', { class: 'tag info', text: `${Math.min(league.match || 0, opponents.length)}/${opponents.length} wins` }),
+    league.lossStreak ? el('span', { class: 'tag warn', text: `Loss streak ${league.lossStreak}/2` }) : null,
     champion ? el('span', { class: 'tag ok', text: 'Champion' }) : null,
   ]);
 
@@ -812,9 +1078,11 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
   }));
 
   const upcoming = rankComplete ? null : opponents[league.match || 0];
+  const upcomingEntry = upcoming?.entryFee || currentRank?.entryFee || 0;
   const infoGrid = upcoming ? el('div', { class: 'league-details' }, [
     el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Next Opponent' }), el('strong', { text: upcoming.name }) ]),
     el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Performance' }), el('strong', { text: String(upcoming.perf) }) ]),
+    el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Entry Fee' }), el('strong', { class: upcomingEntry > (state.money || 0) ? 'bad' : '', text: fmt.format(upcomingEntry) }) ]),
     el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Payout' }), el('strong', { class: 'good', text: fmt.format(upcoming.reward) }) ]),
     el('div', { class: 'detail' }, [el('span', { class: 'label', text: 'Heat' }), el('strong', { text: `${upcoming.heat ?? currentRank?.heat ?? 4}` }) ]),
   ]) : null;
@@ -842,6 +1110,7 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
     carSwitcher.appendChild(el('span', { class: 'car-display subtle', text: 'No cars available' }));
   }
 
+  const needsCash = upcomingEntry > (state.money || 0);
   const actionRow = el('div', { class: 'league-actions' }, [
     carSwitcher,
     champion
@@ -853,8 +1122,8 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
         })
       : el('button', {
           class: 'btn good',
-          text: 'Challenge',
-          disabled: (!upcoming) || !carOptions.length || !onLeagueRace,
+          text: upcomingEntry ? `Challenge — ${fmt.format(upcomingEntry)} entry` : 'Challenge',
+          disabled: (!upcoming) || !carOptions.length || !onLeagueRace || needsCash,
           onclick: (e) => {
             if (!carOptions.length || !onLeagueRace || !upcoming) return;
             const switcher = e.target.closest('.league-actions').querySelector('.car-switcher');
@@ -921,12 +1190,27 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
     treeTrack,
   ]);
 
+  const entryWarning = needsCash && upcoming ? el('div', { class: 'league-entry-warning', text: `You need ${fmt.format(upcomingEntry)} to enter this heat.` }) : null;
+
+  const flash = league.flash;
+  const flashClasses = flash ? `league-flash panelish ${flash.tone || 'info'}` : null;
+  const flashBanner = flash ? el('div', { class: flashClasses }, [
+    el('span', { class: 'message', text: flash.text }),
+    el('button', {
+      class: 'btn sm',
+      text: 'Dismiss',
+      onclick: () => { if (onDismissFlash) onDismissFlash(); },
+    })
+  ]) : null;
+
   const panel = el('div', { class: 'panel league-panel' }, [
     headerRow,
+    flashBanner,
     progress,
     infoGrid,
     trophyRow,
     actionRow,
+    entryWarning,
     championMsg,
   ].filter(Boolean));
 
@@ -938,143 +1222,83 @@ function renderLeaguePanel({ state, fmt, canRace, onLeagueRace, onLeagueReset, l
 export function renderMarketView({ state, PARTS, MODELS, fmt, modelId, ensureModelTrends, onBuyCar, isSellConfirm, onSellClickById }) {
   const view = document.getElementById('view');
   view.innerHTML = '';
-  const panel = el('div', { class: 'panel' }, [
+
+  const listingsBody = el('tbody', { ['data-section']: 'market-listings' });
+  const listingsTable = el('table', { class: 'market-table' }, [
+    el('thead', {}, [ el('tr', {}, [
+      el('th', { text: 'Model' }),
+      el('th', { text: 'Perf' }),
+      el('th', { text: 'Condition' }),
+      el('th', { text: 'Price' }),
+      el('th', { text: '' }),
+    ]) ]),
+    listingsBody,
+  ]);
+
+  const listingsPanel = el('div', { class: 'panel', ['data-panel']: 'market-listings' }, [
     el('div', { class: 'row' }, [
       el('h3', { text: 'Illegal Market — Cars' }),
       el('div', { class: 'spacer' }),
       el('span', { class: 'tag info', text: 'Live' }),
     ]),
-    el('div', {}, [
-      el('table', {}, [
-        el('thead', {}, [ el('tr', {}, [
-          el('th', { text: 'Model' }),
-          el('th', { text: 'Perf' }),
-          el('th', { text: 'Condition' }),
-          el('th', { text: 'Price' }),
-          el('th', { text: '' }),
-        ]) ]),
-        el('tbody', {}, state.illegalMarket.map((car, idx) => {
-          const avg = Math.round(PARTS.reduce((a, p) => a + (car.parts[p.key] ?? 100), 0) / PARTS.length);
-          const condNode = renderMarketCondition(avg, state.level);
-          return el('tr', {}, [
-            el('td', { text: car.model }),
-            el('td', { text: String(car.perf) }),
-            el('td', {}, [condNode]),
-            el('td', {}, [ el('span', { ['data-car-price']: car.id, text: fmt.format(car.price) }) ]),
-            el('td', {}, [ el('button', { class: 'btn good', onclick: () => onBuyCar(idx), text: 'Buy' }) ]),
-          ]);
-        }))
-      ])
-    ])
+    el('div', {}, [ listingsTable ]),
   ]);
-  view.appendChild(panel);
+  view.appendChild(listingsPanel);
 
-  // Price trends area
-  const trends = el('div', { class: 'panel' }, [
+  const trendsGrid = el('div', { class: 'grid', ['data-section']: 'market-trends' });
+  const trendsPanel = el('div', { class: 'panel', ['data-panel']: 'market-trends' }, [
     el('div', { class: 'row' }, [
       el('h3', { text: 'Price Trends' }),
       el('div', { class: 'spacer' }),
       el('span', { class: 'subtle', text: 'Auto-updating' }),
     ]),
-    el('div', { class: 'grid' }, state.illegalMarket.map((car) => {
-      const card = el('div', { class: 'panel' }, [
-        el('div', { class: 'row' }, [
-          el('strong', { text: car.model }),
-          el('div', { class: 'spacer' }),
-          el('span', { class: 'tag info', ['data-car-tprice']: car.id, text: fmt.format(car.price) }),
-        ]),
-        (() => {
-          const c = document.createElement('canvas');
-          c.width = 320; c.height = 80; c.style.width = '100%'; c.style.height = '80px';
-          c.setAttribute('data-car-spark', car.id);
-          setTimeout(() => drawSparkline(c, car.priceHistory || [car.price], '#57b6ff'), 0);
-          return c;
-        })(),
-      ]);
-      return card;
-    }))
+    trendsGrid,
   ]);
-  view.appendChild(trends);
+  view.appendChild(trendsPanel);
 
-  // Owned cars price trends (if any)
-  if (state.garage && state.garage.length) {
-    const owned = el('div', { class: 'panel' }, [
-      el('div', { class: 'row' }, [
-        el('h3', { text: 'Your Cars — Price Trends' }),
-        el('div', { class: 'spacer' }),
-        el('span', { class: 'subtle', text: 'Auto-updating' }),
-      ]),
-      el('div', { class: 'grid' }, state.garage.map((car) => {
-        const card = el('div', { class: 'panel' }, [
-          el('div', { class: 'row' }, [
-            el('strong', { text: car.model }),
-            el('div', { class: 'spacer' }),
-            el('span', { class: 'tag ok', ['data-own-tprice']: car.id, text: fmt.format(car.valuation ?? 0) }),
-            (() => {
-              const profit = (car.valuation ?? 0) - (car.boughtPrice ?? 0);
-              const cls = profit >= 0 ? 'tag ok' : 'tag bad';
-              return el('span', { class: cls, ['data-own-pl']: car.id, text: `${profit >= 0 ? '+' : ''}${fmt.format(profit)}` });
-            })(),
-            (() => {
-              const sellBtn = el('button', { class: 'btn danger', text: (typeof isSellConfirm === 'function' && isSellConfirm(car.id)) ? 'Are you sure?' : 'Sell' });
-              if (typeof onSellClickById === 'function') {
-                sellBtn.onclick = () => onSellClickById(car.id, sellBtn);
-              }
-              return sellBtn;
-            })(),
-          ]),
-          (() => {
-            const c = document.createElement('canvas');
-            c.width = 320; c.height = 80; c.style.width = '100%'; c.style.height = '80px';
-            c.setAttribute('data-own-spark', car.id);
-            const pts = (car.valuationHistory && car.valuationHistory.length) ? car.valuationHistory : [(car.valuation ?? 0)];
-            setTimeout(() => drawSparkline(c, pts, '#7ee787'), 0);
-            return c;
-          })(),
-        ]);
-        return card;
-      }))
-    ]);
-    view.appendChild(owned);
-  }
+  const ownedGrid = el('div', { class: 'grid', ['data-section']: 'market-owned' });
+  const ownedPanel = el('div', { class: 'panel', ['data-panel']: 'market-owned' }, [
+    el('div', { class: 'row' }, [
+      el('h3', { text: 'Your Cars — Price Trends' }),
+      el('div', { class: 'spacer' }),
+      el('span', { class: 'subtle', text: 'Auto-updating' }),
+    ]),
+    ownedGrid,
+  ]);
+  view.appendChild(ownedPanel);
 
-  // All models trends
-  const pinnedOrder = [];
-  for (const car of state.illegalMarket) if (!pinnedOrder.includes(car.model)) pinnedOrder.push(car.model);
-  const allModels = MODELS.map(m => m.model).filter(m => !pinnedOrder.includes(m));
-  const ordered = pinnedOrder.concat(allModels);
-  ensureModelTrends();
-  const allPanel = el('div', { class: 'panel' }, [
+  const allGrid = el('div', { class: 'grid', ['data-section']: 'market-all' });
+  const allPanel = el('div', { class: 'panel', ['data-panel']: 'market-all' }, [
     el('div', { class: 'row' }, [
       el('h3', { text: 'All Cars — Trends' }),
       el('div', { class: 'spacer' }),
       el('span', { class: 'subtle', text: 'Pinned: In Shop' }),
     ]),
-    el('div', { class: 'grid' }, ordered.map((name) => {
-      const mid = modelId(name);
-      const m = MODELS.find(mm => mm.model === name);
-      const points = state.modelTrends[name] || [m ? m.basePrice : 0];
-      const curVal = points[points.length - 1] || (m ? m.basePrice : 0);
-      const pinned = pinnedOrder.includes(name);
-      const card = el('div', { class: 'panel' }, [
-        el('div', { class: 'row' }, [
-          el('strong', { text: name }),
-          el('div', { class: 'spacer' }),
-          pinned ? el('span', { class: 'tag ok', text: 'In Shop' }) : el('span', { class: 'tag', text: 'Index' }),
-          el('span', { class: 'tag info', ['data-model-price']: mid, text: fmt.format(curVal) }),
-        ]),
-        (() => {
-          const c = document.createElement('canvas');
-          c.width = 320; c.height = 80; c.style.width = '100%'; c.style.height = '80px';
-          c.setAttribute('data-model-spark', mid);
-          setTimeout(() => drawSparkline(c, points, '#9aa4ff'), 0);
-          return c;
-        })(),
-      ]);
-      return card;
-    }))
+    allGrid,
   ]);
   view.appendChild(allPanel);
+
+  renderMarketListingsSection({
+    container: listingsBody,
+    state,
+    PARTS,
+    fmt,
+    level: state.level,
+    onBuyCar,
+  });
+
+  renderMarketTrendsSection({ container: trendsGrid, state, fmt });
+
+  if (state.garage && state.garage.length) {
+    ownedPanel.classList.remove('is-empty');
+    renderMarketOwnedTrendsSection({ container: ownedGrid, state, fmt, isSellConfirm, onSellClickById });
+  } else {
+    ownedPanel.classList.add('is-empty');
+    ownedGrid.innerHTML = '';
+    ownedGrid.appendChild(el('div', { class: 'subtle', text: 'No cars owned yet.' }));
+  }
+
+  renderMarketAllTrendsSection({ container: allGrid, state, MODELS, fmt, modelId, ensureModelTrends });
 }
 
 export function updateMarketPricesAndTrendsUI({ state, MODELS, fmt, modelId, drawSparkline }) {
