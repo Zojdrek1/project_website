@@ -1229,6 +1229,11 @@ async function applyImportedState(slotIndex, snapshot, sourceLabel = 'file') {
   }
 }
 
+const handleMarketBuy = (carId) => {
+  const idx = state.illegalMarket.findIndex(c => c.id === carId);
+  if (idx !== -1) buyCar(idx);
+};
+
 function refreshMarketUI() {
   if (currentView !== 'market') return;
   const listings = document.querySelector('[data-section="market-listings"]');
