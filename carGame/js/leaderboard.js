@@ -2,8 +2,9 @@
 import { getFirebaseConfig } from './firebase-init.js';
 
 let db = null;
+let auth = null;
 
-export function initLeaderboard() {
+export async function initLeaderboard() {
   try {
     // It is strongly recommended to revoke the old API key and generate a new one.
     // Your previous key was exposed.
@@ -14,19 +15,29 @@ export function initLeaderboard() {
       firebase.initializeApp(firebaseConfig);
     }
     db = firebase.firestore();
-    console.log("Firebase Leaderboard initialized.");
-    return true;
+    auth = firebase.auth();
+
+    // Sign in anonymously
+    if (!auth.currentUser) {
+      await auth.signInAnonymously();
+    }
+    console.log("Firebase Leaderboard initialized. User ID:", auth.currentUser.uid);
+    return auth.currentUser.uid;
   } catch (e) {
     console.error("Firebase initialization failed. Leaderboards will be disabled.", e);
     // If firebase fails, db will be null and functions will gracefully fail.
-    return false;
+    return null;
   }
 }
 
 function isLeaderboardReady() {
-  if (db) return true;
+  if (db && auth && auth.currentUser) return true;
   console.warn("Leaderboard not ready. Firebase might have failed to initialize.");
   return false;
+}
+
+export function getCurrentUserId() {
+  return auth?.currentUser?.uid || null;
 }
 
 export const LEADERBOARD_CATEGORIES = [
@@ -46,10 +57,12 @@ export async function recordLeaderboardEntry({ category, alias, profileId, value
     const collectionRef = db.collection(category);
     const entry = {
       alias,
+      alias_lower: alias.toLowerCase(),
       profileId,
       value,
       meta: meta || {},
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      schemaVersion: 2,
     };
 
     // Use the profileId as the document ID to easily update/overwrite scores.

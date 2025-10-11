@@ -10,8 +10,8 @@ import { el, ensureToasts, showToast, renderNavUI, renderCenterNavUI, drawSparkl
 import { initTutorial, startTutorial, isTutorialActive } from './js/tutorial.js';
 import { initCasino } from './js/casino.js';
 import { ACHIEVEMENT_DEFS, evaluateAchievements, achievementProgressSummary } from './js/achievements.js';
-import { getGarageTierConfig, garageExtraSlotCost, canPurchaseExtraSlot, canUnlockNextTier, COSMETIC_PACKAGES, getCosmeticById, CREW_INVESTMENTS, getCrewInvestment } from './js/progression.js';
-import { LEADERBOARD_CATEGORIES, initLeaderboard, recordLeaderboardEntry, getLeaderboardSnapshot } from './js/leaderboard.js';
+import { getGarageTierConfig, garageExtraSlotCost, canPurchaseExtraSlot, canUnlockNextTier, COSMETIC_PACKAGES, getCosmeticById, CREW_INVESTMENTS, getCrewInvestment, generateUniqueAlias } from './js/progression.js';
+import { LEADERBOARD_CATEGORIES, initLeaderboard, recordLeaderboardEntry, getLeaderboardSnapshot, getCurrentUserId } from './js/leaderboard.js';
 import { renderLeaderboardView } from './js/leaderboardView.js';
 let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 function currencySymbol() {
@@ -64,7 +64,8 @@ function sanitizeAlias(name) {
 
 function ensureProfile() {
   if (!state.profile || typeof state.profile !== 'object') {
-    state.profile = { id: generateProfileId(), alias: 'Crew Chief', shareLeaderboard: false };
+    const uid = getCurrentUserId() || generateProfileId();
+    state.profile = { id: uid, alias: 'Crew Chief', shareLeaderboard: false };
   }
   if (typeof state.profile.id !== 'string' || !state.profile.id) state.profile.id = generateProfileId();
   state.profile.alias = sanitizeAlias(state.profile.alias);
@@ -1113,6 +1114,7 @@ function renderNav() {
     shareLeaderboard: !!profile.shareLeaderboard,
     onSetAlias: (alias) => setProfileAlias(alias),
     onToggleShare: (enabled) => setLeaderboardSharing(enabled),
+    onGenerateAlias: () => generateAndSetUniqueAlias(),
   });
   // Render center nav back in its original place
   renderCenterNavUI({ state, currentView, navItems: NAV, onSetView: (key) => setView(key) });
@@ -1120,6 +1122,13 @@ function renderNav() {
   scheduleStickyMeasure();
 }
 
+function toggleOptionsMenu() {
+  if (!state.ui) state.ui = { openCars: {}, showDev: false };
+  state.ui.showOptions = !state.ui.showOptions;
+  const pop = document.getElementById('optionsPop');
+  if (pop) pop.classList.toggle('open', !!state.ui.showOptions);
+  saveState();
+}
 function hideOptionsMenu() {
   if (state.ui) state.ui.showOptions = false;
   const pop = document.getElementById('optionsPop');
@@ -1221,6 +1230,13 @@ async function applyImportedState(slotIndex, snapshot, sourceLabel = 'file') {
     showToast('Import failed. Could not apply save data.', 'warn');
   }
 }
+
+// (Removed duplicate renderNav definition)
+
+const handleMarketBuy = (carId) => {
+  const idx = state.illegalMarket.findIndex(c => c.id === carId);
+  if (idx !== -1) buyCar(idx);
+};
 
 function refreshMarketUI() {
   if (currentView !== 'market') return;
@@ -1706,7 +1722,7 @@ function render() {
       leaderboards: boards,
       profileId: profile.id,
       alias: profile.alias,
-    }));
+    });
   } else if (currentView === 'casino') {
     renderCasino();
   }
@@ -1814,12 +1830,8 @@ async function initializeGame({ skipLoader = false } = {}) {
   if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
   ensureModelTrends();
   ensureLeagueState();
-  const firebaseOk = await loadFirebaseSDKs();
-  if (firebaseOk) {
-    const uid = await initLeaderboard();
-    const profile = ensureProfile();
-    if (uid) profile.id = uid;
-  }
+  await loadFirebaseSDKs();
+  initLeaderboard();
   ensureStats();
   initTutorial({ state, setView: (viewKey) => setView(viewKey), saveState });
   const tutorialState = state.ui?.tutorial;
