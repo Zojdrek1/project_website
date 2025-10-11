@@ -1544,7 +1544,7 @@ body {
   overflow: hidden;
   max-height: 0;
   padding-top: 0;
-  transition: max-height 240ms ease, padding-top 240ms ease;
+  display: none;
 }
 .garage-card .collapsible.open {
   border-top: 1px solid rgba(120, 160, 255, 0.08);
@@ -1553,6 +1553,7 @@ body {
 .garage-card .collapsible.open .content {
   max-height: 1200px;
   padding-top: 12px;
+  display: block;
 }
 .tag.metric {
   border-color: rgba(120, 160, 255, 0.18);

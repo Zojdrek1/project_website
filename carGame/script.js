@@ -1002,14 +1002,17 @@ function toggleCarOpen(id, { skipRefresh = false } = {}) {
     collapsible.classList.toggle('open', open);
     const toggleBtn = document.querySelector(`[data-garage-card="${id}"] .garage-header .btn-toggle`);
     if (toggleBtn) toggleBtn.textContent = open ? 'Hide Details ▴' : 'Show Details ▾';
+    const content = collapsible.querySelector('.content');
     const breakdown = collapsible.querySelector('.car-breakdown');
-    if (breakdown) {
-      if (open) {
+    if (open) {
+      if (content) content.style.display = '';
+      if (breakdown) {
         breakdown.style.height = '';
         requestAnimationFrame(() => layoutCarBreakdown(breakdown));
-      } else {
-        breakdown.style.height = '0px';
       }
+    } else {
+      if (breakdown) breakdown.style.height = '0px';
+      if (content) content.style.display = 'none';
     }
   } else if (!skipRefresh) {
     refreshGarageUI();
