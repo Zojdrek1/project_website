@@ -1,7 +1,7 @@
 // Minimal UI helpers shared across views
 
 export function getIconSVG(name) {
-  const wrap = (txt) => `<span class="icon">${txt}</span>`;
+  const wrap = (txt) => `<span class="icon" style="margin-right: 6px;">${txt}</span>`;
   switch (name) {
     case 'casino':
     case 'slots':

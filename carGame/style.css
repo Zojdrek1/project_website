@@ -1193,7 +1193,7 @@ body {
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
   white-space: nowrap;
   position: relative;
-  z-index: 1; /* sit above sliding indicator */
+  z-index: 1;
 }
 .topnav button:hover { background: var(--panel-2); border-color: var(--border); filter: brightness(1.06); }
 .topnav button.active {
