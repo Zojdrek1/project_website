@@ -106,7 +106,7 @@ export function showToast(message, type = 'info', actions = null, timeoutMs = 42
 }
 
 // Render top navigation and options popover
-export function renderNavUI({ state, currentView, navItems, onSetView, onToggleOptions, onHideOptions, onToggleDev, onNewGame, onStartTutorial = null, tutorialActive = false, currencyCode = 'USD', currencies = [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']], onSetCurrency = null, onGoHome = null, onSetSound, onSetVolume, onTestSound, onExportSave = null, onImportSave = null, profileAlias = 'Crew Chief', shareLeaderboard = false, onSetAlias = null, onToggleShare = null }) {
+export function renderNavUI({ state, currentView, navItems, onSetView, onToggleOptions, onHideOptions, onToggleDev, onNewGame, onStartTutorial = null, tutorialActive = false, currencyCode = 'USD', currencies = [['USD','US Dollar'], ['GBP','British Pound'], ['EUR','Euro'], ['JPY','Japanese Yen'], ['PLN','Polish Złoty']], onSetCurrency = null, onGoHome = null, onSetSound, onSetVolume, onTestSound, onExportSave = null, onImportSave = null, profileAlias = 'Crew Chief', shareLeaderboard = false, onSetAlias = null, onToggleShare = null, onGenerateAlias = null }) {
   const nav = document.getElementById('nav');
   if (!nav) return;
   nav.innerHTML = '';
@@ -194,6 +194,12 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   aliasInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); aliasInput.blur(); } };
   aliasInput.onblur = () => { if (onSetAlias) onSetAlias(aliasInput.value); };
   aliasField.appendChild(aliasInput);
+  if (typeof onGenerateAlias === 'function') {
+    const genBtn = el('button', { class: 'btn sm', title: 'Generate a unique alias' });
+    genBtn.innerHTML = getIconSVG('refresh');
+    genBtn.onclick = () => onGenerateAlias();
+    aliasField.appendChild(genBtn);
+  }
   scroller.appendChild(aliasField);
 
   const shareField = document.createElement('div'); shareField.className = 'options-field';

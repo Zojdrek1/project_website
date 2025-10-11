@@ -1789,6 +1789,13 @@ function refreshAll() {
   refreshStreetRacesUI();
   refreshLeagueUI();
   updateMoney();
+  // Pre-initialize Firebase so it's ready for the menu's alias check
+  if (typeof window.firebase === 'undefined') {
+    loadFirebaseSDKs().then(ok => {
+      if (ok) initLeaderboard();
+    });
+  }
+
   if (!['market','garage','street_races','league'].includes(currentView)) {
     render();
   }
@@ -1826,7 +1833,6 @@ async function initializeGame({ skipLoader = false } = {}) {
   if (!state.illegalMarket.length) refreshIllegalMarket();
   if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
   ensureModelTrends();
-  ensureLeagueState();
   await loadFirebaseSDKs();
   initLeaderboard();
   ensureStats();

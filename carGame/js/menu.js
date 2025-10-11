@@ -1,8 +1,10 @@
 // Main menu overlay with save slots and new-game options
 
 import { CURRENCY_RATES } from './economy.js';
+import { generateUniqueAlias } from './progression.js';
+import { isAliasTaken } from './leaderboard.js';
 import { listSlotSummaries, getSlotSummary } from './state.js';
-import { el } from './ui.js';
+import { el, getIconSVG } from './ui.js';
 
 const CURRENCIES = [
   ['USD', 'US Dollar'],
@@ -116,6 +118,15 @@ const ensureRoot = () => {
   newGameStartBtn = el('button', { type: 'submit', class: 'btn primary', text: 'Start Game' });
 
   const actions = el('div', { class: 'menu-actions' }, [cancelBtn, newGameStartBtn]);
+  const generateBtn = el('button', { type: 'button', class: 'btn' });
+  generateBtn.innerHTML = getIconSVG('refresh') + ' Generate';
+  generateBtn.style.marginLeft = 'auto';
+  generateBtn.onclick = async () => {
+    if (newGameAlias) {
+      newGameAlias.value = await generateUniqueAlias();
+      updateStartBtn();
+    }
+  };
 
   newGameForm = el('form', { class: 'menu-newgame-form' }, [
     newGameTitle,
@@ -128,8 +139,9 @@ const ensureRoot = () => {
     currencyLabel,
     newGameCurrency,
     newGameError,
-    actions,
+    el('div', { class: 'menu-actions' }, [cancelBtn, generateBtn, newGameStartBtn]),
   ]);
+
   newGameForm.onsubmit = (e) => {
     e.preventDefault();
     handleNewGameSubmit();
@@ -295,7 +307,7 @@ const closeNewGamePanel = () => {
   if (newGameStartBtn) newGameStartBtn.disabled = false;
 };
 
-const handleNewGameSubmit = () => {
+const handleNewGameSubmit = async () => {
   if (pendingSlot === null) return;
   const alias = newGameAlias ? newGameAlias.value.trim() : '';
   if (!alias) {
@@ -303,6 +315,16 @@ const handleNewGameSubmit = () => {
     if (newGameAlias) newGameAlias.focus();
     return;
   }
+
+  if (newGameStartBtn) newGameStartBtn.disabled = true;
+  newGameError.textContent = 'Checking alias...';
+  const taken = await isAliasTaken(alias);
+  if (taken) {
+    newGameError.textContent = 'This alias is already taken. Please choose another.';
+    if (newGameStartBtn) newGameStartBtn.disabled = false;
+    return;
+  }
+
   const currency = (newGameCurrency && newGameCurrency.value) || 'USD';
   const difficulty = (newGameDifficulty && newGameDifficulty.value) || 'standard';
   const payload = { alias, currency, difficulty };

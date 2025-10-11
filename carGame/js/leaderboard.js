@@ -60,6 +60,21 @@ export async function recordLeaderboardEntry({ category, alias, profileId, value
   }
 }
 
+export async function isAliasTaken(alias) {
+  if (!isLeaderboardReady()) return false; // Fail open if DB not ready
+  try {
+    const collectionRef = db.collection('netWorth');
+    // Case-insensitive check by querying a range
+    const lower = alias.toLowerCase();
+    const upper = lower + '\uf8ff';
+    const query = collectionRef.where('alias_lower', '>=', lower).where('alias_lower', '<=', upper).limit(1);
+    const snapshot = await query.get();
+    return !snapshot.empty;
+  } catch (error) {
+    console.error("Failed to check alias:", error);
+    return false; // Fail open on error
+  }
+}
 export async function getLeaderboardSnapshot(limit = 8) {
   if (!isLeaderboardReady()) return {};
 

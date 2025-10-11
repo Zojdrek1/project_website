@@ -1,3 +1,5 @@
+import { isAliasTaken } from './leaderboard.js';
+
 export const GARAGE_TIERS = [
   {
     id: 'lockup',
@@ -135,4 +137,19 @@ export function getCosmeticById(id) {
 
 export function getCrewInvestment(key) {
   return CREW_INVESTMENTS.find(c => c.key === key) || null;
+}
+
+export async function generateUniqueAlias() {
+  const ADJECTIVES = ['Silent', 'Swift', 'Midnight', 'Apex', 'Rogue', 'Drift', 'Turbo', 'Nitro', 'Ghost', 'Shadow'];
+  const NOUNS = ['Racer', 'Runner', 'King', 'Syndicate', 'Crew', 'Phantom', 'Joker', 'Outlaw', 'Spectre', 'Legend'];
+  for (let i = 0; i < 20; i++) {
+    const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+    const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+    const num = Math.floor(Math.random() * 90) + 10;
+    const alias = `${adj}${noun}${num}`;
+    // eslint-disable-next-line no-await-in-loop
+    const taken = await isAliasTaken(alias);
+    if (!taken) return alias;
+  }
+  return `Racer${Date.now() % 10000}`; // Fallback
 }
