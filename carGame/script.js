@@ -11,7 +11,7 @@ import { initTutorial, startTutorial, isTutorialActive } from './js/tutorial.js'
 import { initCasino } from './js/casino.js';
 import { ACHIEVEMENT_DEFS, evaluateAchievements, achievementProgressSummary } from './js/achievements.js';
 import { getGarageTierConfig, garageExtraSlotCost, canPurchaseExtraSlot, canUnlockNextTier, COSMETIC_PACKAGES, getCosmeticById, CREW_INVESTMENTS, getCrewInvestment } from './js/progression.js';
-import { LEADERBOARD_CATEGORIES, recordLeaderboardEntry, getLeaderboardSnapshot } from './js/leaderboard.js';
+import { LEADERBOARD_CATEGORIES, initLeaderboard, recordLeaderboardEntry, getLeaderboardSnapshot } from './js/leaderboard.js';
 import { renderLeaderboardView } from './js/leaderboardView.js';
 let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 function currencySymbol() {
@@ -107,7 +107,7 @@ function setProfileAlias(name) {
   renderNav();
   if (profile.shareLeaderboard) {
     const metrics = computeDashboardMetrics();
-    syncLeaderboards(metrics);
+    syncLeaderboards(metrics); // This will now be async but we don't need to wait
   }
   scheduleRender();
 }
@@ -121,7 +121,7 @@ function setLeaderboardSharing(enabled) {
   showToast(next ? 'Leaderboard sharing enabled. Best scores are stored locally.' : 'Leaderboard sharing disabled.', next ? 'good' : 'info');
   if (next) {
     const metrics = computeDashboardMetrics();
-    syncLeaderboards(metrics);
+    syncLeaderboards(metrics); // Async, fire-and-forget
   }
   scheduleRender();
 }
@@ -147,15 +147,15 @@ function summarizeLeagueForLeaderboard() {
   };
 }
 
-function syncLeaderboards(metrics) {
+async function syncLeaderboards(metrics) {
   const profile = ensureProfile();
   if (profile.shareLeaderboard) {
     const alias = profile.alias;
     const profileId = profile.id;
-    recordLeaderboardEntry({ category: 'netWorth', alias, profileId, value: metrics.netWorth || 0, meta: { cash: metrics.money || 0 } });
-    recordLeaderboardEntry({ category: 'level', alias, profileId, value: state.level || 1 });
+    await recordLeaderboardEntry({ category: 'netWorth', alias, profileId, value: metrics.netWorth || 0, meta: { cash: metrics.money || 0 } });
+    await recordLeaderboardEntry({ category: 'level', alias, profileId, value: state.level || 1 });
     const leagueSummary = summarizeLeagueForLeaderboard();
-    recordLeaderboardEntry({ category: 'league', alias, profileId, value: leagueSummary.value, meta: leagueSummary.meta });
+    await recordLeaderboardEntry({ category: 'league', alias, profileId, value: leagueSummary.value, meta: leagueSummary.meta });
   }
   return getLeaderboardSnapshot(8);
 }
@@ -1632,8 +1632,8 @@ function render() {
     };
   });
   if (currentView === 'dashboard') {
-    const metrics = computeDashboardMetrics();
-    if (profile.shareLeaderboard) syncLeaderboards(metrics);
+    const metrics = computeDashboardMetrics(); // This is synchronous
+    if (profile.shareLeaderboard) syncLeaderboards(metrics); // This is now async, fire-and-forget
     renderDashboardView({
       state,
       metrics,
@@ -1712,14 +1712,14 @@ function render() {
       onDismissLeagueFlash: () => clearLeagueFlash(),
     });
   } else if (currentView === 'leaderboard') {
-    const boards = getLeaderboardSnapshot(20);
-    renderLeaderboardView({
+    // Fetch boards and then render
+    getLeaderboardSnapshot(20).then(boards => renderLeaderboardView({
       state,
       fmt,
       leaderboards: boards,
       profileId: profile.id,
       alias: profile.alias,
-    });
+    }));
   } else if (currentView === 'casino') {
     renderCasino();
   }
@@ -1794,6 +1794,25 @@ function refreshAll() {
   }
 }
 
+async function loadFirebaseSDKs() {
+  if (typeof window.firebase !== 'undefined') return true;
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  try {
+    await loadScript("https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js");
+    return true;
+  } catch (e) {
+    console.error("Failed to load Firebase SDKs. Leaderboards will be disabled.", e);
+    return false;
+  }
+}
+
 async function initializeGame({ skipLoader = false } = {}) {
   if (gameBooted) {
     try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency || 'USD', maximumFractionDigits: 0 }); } catch {}
@@ -1808,6 +1827,8 @@ async function initializeGame({ skipLoader = false } = {}) {
   if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
   ensureModelTrends();
   ensureLeagueState();
+  await loadFirebaseSDKs();
+  initLeaderboard();
   ensureStats();
   initTutorial({ state, setView: (viewKey) => setView(viewKey), saveState });
   const tutorialState = state.ui?.tutorial;

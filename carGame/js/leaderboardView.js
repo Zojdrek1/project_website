@@ -19,8 +19,8 @@ export function renderLeaderboardView({ state, fmt, leaderboards = {}, profileId
 
   const groups = [];
   for (const [key, def] of Object.entries(LEADERBOARD_CATEGORIES)) {
-    const board = leaderboards[key];
-    const entries = Array.isArray(board?.entries) ? board.entries : [];
+    const categoryKey = def.key;
+    const entries = Array.isArray(leaderboards[categoryKey]) ? leaderboards[categoryKey] : [];
     if (!entries.length) {
       groups.push(el('div', { class: 'leaderboard-group empty' }, [
         el('h4', { text: def.label }),

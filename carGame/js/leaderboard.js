@@ -1,113 +1,98 @@
-const STORAGE_KEY = 'ics_leaderboard_v1';
+// --- Firebase Leaderboard Service ---
+import { getFirebaseConfig } from './firebase-init.js';
 
-export const LEADERBOARD_CATEGORIES = {
-  netWorth: { key: 'netWorth', label: 'Top Net Worth', higherBetter: true },
-  level: { key: 'level', label: 'Highest Level', higherBetter: true },
-  league: { key: 'league', label: 'League Prestige', higherBetter: true },
-};
+let db = null;
 
-function defaultData() {
-  const data = {};
-  for (const key of Object.keys(LEADERBOARD_CATEGORIES)) {
-    data[key] = [];
-  }
-  return data;
-}
-
-function loadData() {
+export function initLeaderboard() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultData();
-    const parsed = JSON.parse(raw);
-    const data = defaultData();
-    for (const key of Object.keys(LEADERBOARD_CATEGORIES)) {
-      if (Array.isArray(parsed[key])) data[key] = parsed[key];
+    // It is strongly recommended to revoke the old API key and generate a new one.
+    // Your previous key was exposed.
+    const firebaseConfig = getFirebaseConfig();
+
+    // Initialize Firebase
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
     }
-    return data;
-  } catch {
-    return defaultData();
+    db = firebase.firestore();
+    console.log("Firebase Leaderboard initialized.");
+    return true;
+  } catch (e) {
+    console.error("Firebase initialization failed. Leaderboards will be disabled.", e);
+    // If firebase fails, db will be null and functions will gracefully fail.
+    return false;
   }
 }
 
-function saveData(data) {
+function isLeaderboardReady() {
+  if (db) return true;
+  console.warn("Leaderboard not ready. Firebase might have failed to initialize.");
+  return false;
+}
+
+export const LEADERBOARD_CATEGORIES = [
+  { key: 'netWorth', label: 'Net Worth', order: 'desc' },
+  { key: 'level', label: 'Player Level', order: 'desc' },
+  { key: 'league', label: 'League Prestige', order: 'desc' },
+];
+
+const MAX_ENTRIES = 100; // Firestore can handle more
+
+export async function recordLeaderboardEntry({ category, alias, profileId, value, meta = {} }) {
+  if (!isLeaderboardReady() || !category || !alias || !profileId || typeof value !== 'number') return;
+  const catDef = LEADERBOARD_CATEGORIES.find(c => c.key === category);
+  if (!catDef) return;
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {}
-}
+    const collectionRef = db.collection(category);
+    const entry = {
+      alias,
+      profileId,
+      value,
+      meta: meta || {},
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
 
-function normalizeAlias(alias) {
-  if (typeof alias !== 'string') return 'Crew Chief';
-  const trimmed = alias.trim().slice(0, 24);
-  return trimmed || 'Crew Chief';
-}
+    // Use the profileId as the document ID to easily update/overwrite scores.
+    await collectionRef.doc(profileId).set(entry, { merge: true });
 
-function isBetter(def, nextValue, prevValue) {
-  if (typeof prevValue !== 'number') return true;
-  if (def.higherBetter) return nextValue > prevValue;
-  return nextValue < prevValue;
-}
-
-export function recordLeaderboardEntry({ category, alias, profileId, value, meta = {} }) {
-  if (!category || typeof value !== 'number') return null;
-  if (!profileId) return null;
-  const def = LEADERBOARD_CATEGORIES[category];
-  if (!def) return null;
-
-  const data = loadData();
-  const board = Array.isArray(data[category]) ? data[category] : (data[category] = []);
-  const normalizedAlias = normalizeAlias(alias);
-  const entry = {
-    profileId,
-    alias: normalizedAlias,
-    value: Math.round(value),
-    meta,
-    ts: Date.now(),
-  };
-
-  const existingIndex = board.findIndex(item => item && item.profileId === profileId);
-  if (existingIndex !== -1) {
-    const current = board[existingIndex];
-    if (isBetter(def, entry.value, current.value)) {
-      board[existingIndex] = entry;
-    } else {
-      return current;
-    }
-  } else {
-    board.push(entry);
+  } catch (error) {
+    console.error(`Failed to record leaderboard entry for ${category}:`, error);
   }
-
-  board.sort((a, b) => {
-    if (def.higherBetter) {
-      if (b.value !== a.value) return b.value - a.value;
-    } else if (a.value !== b.value) {
-      return a.value - b.value;
-    }
-    return (a.ts || 0) - (b.ts || 0);
-  });
-  if (board.length > 50) board.length = 50;
-
-  saveData(data);
-  return entry;
 }
 
-export function getTopEntries(category, limit = 10) {
-  const def = LEADERBOARD_CATEGORIES[category];
-  if (!def) return [];
-  const data = loadData();
-  const board = Array.isArray(data[category]) ? data[category] : [];
-  return board.slice(0, limit);
-}
+export async function getLeaderboardSnapshot(limit = 8) {
+  if (!isLeaderboardReady()) return {};
 
-export function getLeaderboardSnapshot(limit = 10) {
-  const data = loadData();
   const snapshot = {};
-  for (const [key, def] of Object.entries(LEADERBOARD_CATEGORIES)) {
-    const entries = Array.isArray(data[key]) ? data[key].slice(0, limit) : [];
-    snapshot[key] = { label: def.label, entries };
+  for (const cat of LEADERBOARD_CATEGORIES) {
+    try {
+      const collectionRef = db.collection(cat.key);
+      const query = collectionRef.orderBy('value', cat.order).limit(limit);
+      const querySnapshot = await query.get();
+      const entries = [];
+      querySnapshot.forEach(doc => {
+        entries.push(doc.data());
+      });
+      snapshot[cat.key] = entries;
+    } catch (error) {
+      console.error(`Failed to fetch leaderboard for ${cat.key}:`, error);
+      snapshot[cat.key] = []; // Return empty on error
+    }
   }
   return snapshot;
 }
 
+export function getTopEntries(category, limit = 10) {
+  // This function is kept for compatibility but now returns a promise.
+  // It's better to use getLeaderboardSnapshot for a full view.
+  return new Promise(async (resolve) => {
+    if (!isLeaderboardReady()) resolve([]);
+    const snapshot = await getLeaderboardSnapshot(limit);
+    resolve(snapshot[category] || []);
+  });
+}
+
 export function clearLeaderboard() {
-  saveData(defaultData());
+  // This is now a server-side operation. For local dev, you can clear collections in the Firebase console.
+  console.warn("clearLeaderboard() is a server-side operation and is disabled on the client.");
 }
