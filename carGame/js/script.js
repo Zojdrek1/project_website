@@ -1129,12 +1129,6 @@ function toggleOptionsMenu() {
   if (pop) pop.classList.toggle('open', !!state.ui.showOptions);
   saveState();
 }
-function hideOptionsMenu() {
-  if (state.ui) state.ui.showOptions = false;
-  const pop = document.getElementById('optionsPop');
-  if (pop) pop.classList.remove('open');
-}
-
 function cloneForTransfer(data) {
   try {
     return typeof structuredClone === 'function' ? structuredClone(data) : JSON.parse(JSON.stringify(data));

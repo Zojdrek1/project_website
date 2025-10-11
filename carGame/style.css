@@ -316,6 +316,12 @@
   color: #8a9bc2;
   font-size: 0.95rem;
 }
+.menu-starting-preview {
+  text-align: center;
+  color: #cfe8ff;
+  font-weight: 600;
+  margin: 4px 0 8px;
+}
 .menu-label {
   font-size: 0.9rem;
   color: #aebce4;

@@ -14,6 +14,8 @@ const CURRENCIES = [
   ['PLN', 'Polish Złoty'],
 ];
 
+const NEW_GAME_BASE_USD = { easy: 40000, standard: 20000, hard: 12000 };
+
 let root = null;
 let slotsContainer = null;
 let newGamePanel = null;
@@ -22,6 +24,7 @@ let newGameTitle = null;
 let newGameAlias = null;
 let newGameDifficulty = null;
 let newGameCurrency = null;
+let newGameStartingPreview = null;
 let newGameError = null;
 let newGameStartBtn = null;
 let optionsRef = null;
@@ -30,28 +33,16 @@ let quickResumeBtn = null;
 let quickResumeNote = null;
 
 const updateStartingMoneyDisplay = () => {
-  if (!newGamePanel || !newGamePanel.classList.contains('open')) return;
-
-  const moneyDisplay = newGameForm.querySelector('#newGameStartingMoney');
-  if (!moneyDisplay) return;
-
+  if (!newGameStartingPreview) return;
   const difficulty = newGameDifficulty ? newGameDifficulty.value : 'standard';
   const currency = newGameCurrency ? newGameCurrency.value : 'USD';
-
-  const startingMoneyUSD = (() => {
-    switch (difficulty) {
-      case 'easy': return 40000;
-      case 'hard': return 12000;
-      default: return 20000;
-    }
-  })();
-
-  const rate = CURRENCY_RATES[currency] || 1;
-  const startingMoney = Math.round(startingMoneyUSD * rate);
-
-  let fmt;
-  try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }); } catch { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }); }
-  moneyDisplay.textContent = `Starting Money: ${fmt.format(startingMoney)}`;
+  const amount = startingMoneyFor(difficulty, currency);
+  let label;
+  try { label = new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount); }
+  catch { label = `${currency} ${amount}`; }
+  const diffText = difficultyLabel[difficulty] || 'Medium';
+  newGameStartingPreview.textContent = `Starting Money: ${label} (${diffText})`;
+  return amount;
 };
 
 const ensureRoot = () => {
@@ -128,10 +119,12 @@ const ensureRoot = () => {
     }
   };
 
+  newGameStartingPreview = el('div', { class: 'menu-starting-preview', text: '' });
+
   newGameForm = el('form', { class: 'menu-newgame-form' }, [
     newGameTitle,
     el('p', { class: 'menu-newgame-note', text: 'Choose your starting conditions. This will overwrite the selected slot.' }),
-    el('div', { id: 'newGameStartingMoney', class: 'menu-label', style: 'margin-top: 8px; text-align: center; color: #cfe8ff;' }),
+    newGameStartingPreview,
     aliasLabel,
     newGameAlias,
     difficultyLabel,
@@ -156,6 +149,7 @@ const ensureRoot = () => {
     newGameAlias.addEventListener('input', updateStartBtn);
     newGameAlias.addEventListener('blur', updateStartBtn);
   }
+  updateStartingMoneyDisplay();
   updateStartBtn();
 
   newGamePanel = el('div', { class: 'menu-newgame' }, [newGameForm]);
@@ -198,6 +192,14 @@ const difficultyLabel = {
 const formatMoney = (amount, currency) => {
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount); }
   catch { return `${currency} ${Math.round(amount)}`; }
+};
+
+const startingMoneyFor = (difficulty, currency) => {
+  const base = NEW_GAME_BASE_USD[difficulty] ?? NEW_GAME_BASE_USD.standard;
+  const rate = CURRENCY_RATES[currency] ?? 1;
+  const converted = Math.round(base * rate);
+  const step = currency === 'JPY' ? 1000 : 500;
+  return Math.max(step, Math.round(converted / step) * step);
 };
 
 const updateQuickResume = (summaries) => {
@@ -327,7 +329,8 @@ const handleNewGameSubmit = async () => {
 
   const currency = (newGameCurrency && newGameCurrency.value) || 'USD';
   const difficulty = (newGameDifficulty && newGameDifficulty.value) || 'standard';
-  const payload = { alias, currency, difficulty };
+  const money = startingMoneyFor(difficulty, currency);
+  const payload = { alias, currency, difficulty, money };
   const handler = optionsRef && typeof optionsRef.onNewGame === 'function' ? optionsRef.onNewGame : null;
   const finish = () => {
     closeNewGamePanel();

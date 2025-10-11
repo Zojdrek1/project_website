@@ -146,7 +146,7 @@ export async function generateUniqueAlias() {
     const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
     const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
     const num = Math.floor(Math.random() * 90) + 10;
-    const alias = `${adj}${noun}${num}`;
+    const alias = `${adj} ${noun} ${num}`;
     // eslint-disable-next-line no-await-in-loop
     const taken = await isAliasTaken(alias);
     if (!taken) return alias;

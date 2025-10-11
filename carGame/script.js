@@ -107,7 +107,7 @@ function setProfileAlias(name) {
   renderNav();
   if (profile.shareLeaderboard) {
     const metrics = computeDashboardMetrics();
-    syncLeaderboards(metrics); // This will now be async but we don't need to wait
+    syncLeaderboards(metrics).catch(() => {});
   }
   scheduleRender();
 }
@@ -121,7 +121,7 @@ function setLeaderboardSharing(enabled) {
   showToast(next ? 'Leaderboard sharing enabled. Best scores are stored locally.' : 'Leaderboard sharing disabled.', next ? 'good' : 'info');
   if (next) {
     const metrics = computeDashboardMetrics();
-    syncLeaderboards(metrics); // Async, fire-and-forget
+    syncLeaderboards(metrics).catch(() => {});
   }
   scheduleRender();
 }
@@ -1078,6 +1078,19 @@ function addHeat(amount, reason = '') {
   saveState();
 }
 
+function toggleOptionsMenu() {
+  if (!state.ui) state.ui = { openCars: {}, showDev: false };
+  state.ui.showOptions = !state.ui.showOptions;
+  const pop = document.getElementById('optionsPop');
+  if (pop) pop.classList.toggle('open', !!state.ui.showOptions);
+  saveState();
+}
+function hideOptionsMenu() {
+  if (state.ui) state.ui.showOptions = false;
+  const pop = document.getElementById('optionsPop');
+  if (pop) pop.classList.remove('open');
+}
+
 function renderNav() {
   const profile = ensureProfile();
   renderNavUI({
@@ -1118,12 +1131,6 @@ function renderNav() {
   renderCenterNavUI({ state, currentView, navItems: NAV, onSetView: (key) => setView(key) });
   // Recalculate sticky offsets after nav and topbar updates
   scheduleStickyMeasure();
-}
-
-function hideOptionsMenu() {
-  if (state.ui) state.ui.showOptions = false;
-  const pop = document.getElementById('optionsPop');
-  if (pop) pop.classList.remove('open');
 }
 
 function cloneForTransfer(data) {
@@ -1594,6 +1601,7 @@ function render() {
   const profile = ensureProfile();
   const tierIndex = Math.max(0, Math.round(state.garageTier || 0));
   const tierConfig = getGarageTierConfig(tierIndex);
+  const nextTierCost = () => { const n = nextGarageTierCost(); return n ? n.cost : null; };
   const nextTierData = nextGarageTierCost();
   const extraSlots = Math.max(0, Math.round(state.garagesPurchased || 0));
   const canBuySlot = canPurchaseExtraSlot({ tierIndex, slotsPurchased: extraSlots });
@@ -1699,14 +1707,16 @@ function render() {
       onDismissLeagueFlash: () => clearLeagueFlash(),
     });
   } else if (currentView === 'leaderboard') {
-    // Fetch boards and then render
-    getLeaderboardSnapshot(20).then(boards => renderLeaderboardView({
-      state,
-      fmt,
-      leaderboards: boards,
-      profileId: profile.id,
-      alias: profile.alias,
-    }));
+    const metrics = computeDashboardMetrics();
+    syncLeaderboards(metrics).then((boards) => {
+      renderLeaderboardView({
+        state,
+        fmt,
+        leaderboards: boards,
+        profileId: profile.id,
+        alias: profile.alias,
+      });
+    });
   } else if (currentView === 'casino') {
     renderCasino();
   }
@@ -1952,6 +1962,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const firebaseOk = await loadFirebaseSDKs();
   if (firebaseOk) {
     const uid = await initLeaderboard();
+    if (uid && (!state.profile || !state.profile.id)) ensureProfile().id = uid;
     // The profile will be properly ensured inside initializeGame
   }
   showMainMenu(menuHandlers);

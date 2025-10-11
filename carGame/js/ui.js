@@ -193,7 +193,7 @@ export function renderNavUI({ state, currentView, navItems, onSetView, onToggleO
   const aliasInput = document.createElement('input'); aliasInput.type = 'text'; aliasInput.maxLength = 24; aliasInput.value = profileAlias || ''; aliasInput.placeholder = 'Crew Alias';
   aliasInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); aliasInput.blur(); } };
   aliasInput.onblur = () => { if (onSetAlias) onSetAlias(aliasInput.value); };
-  aliasField.appendChild(aliasInput);
+  aliasField.appendChild(aliasInput); 
   if (typeof onGenerateAlias === 'function') {
     const genBtn = el('button', { class: 'btn sm', title: 'Generate a unique alias' });
     genBtn.innerHTML = getIconSVG('refresh');

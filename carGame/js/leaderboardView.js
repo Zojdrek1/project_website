@@ -18,9 +18,13 @@ export function renderLeaderboardView({ state, fmt, leaderboards = {}, profileId
   view.appendChild(header);
 
   const groups = [];
-  for (const [key, def] of Object.entries(LEADERBOARD_CATEGORIES)) {
+  const categories = Array.isArray(LEADERBOARD_CATEGORIES) ? LEADERBOARD_CATEGORIES : Object.values(LEADERBOARD_CATEGORIES);
+  for (const def of categories) {
     const categoryKey = def.key;
-    const entries = Array.isArray(leaderboards[categoryKey]) ? leaderboards[categoryKey] : [];
+    const entriesSource = leaderboards[categoryKey];
+    const entries = Array.isArray(entriesSource)
+      ? entriesSource
+      : Array.isArray(entriesSource?.entries) ? entriesSource.entries : [];
     if (!entries.length) {
       groups.push(el('div', { class: 'leaderboard-group empty' }, [
         el('h4', { text: def.label }),
@@ -45,9 +49,9 @@ export function renderLeaderboardView({ state, fmt, leaderboards = {}, profileId
         })(),
         (() => {
           let display = String(entry.value || '—');
-          if (key === 'netWorth') display = fmt.format(entry.value || 0);
-          else if (key === 'level') display = `Lv ${entry.value || 1}`;
-          else if (key === 'league') display = entry.meta && entry.meta.champion ? 'Champion' : (entry.meta && entry.meta.rankName) ? entry.meta.rankName : `Score ${entry.value}`;
+          if (categoryKey === 'netWorth') display = fmt.format(entry.value || 0);
+          else if (categoryKey === 'level') display = `Lv ${entry.value || 1}`;
+          else if (categoryKey === 'league') display = entry.meta && entry.meta.champion ? 'Champion' : (entry.meta && entry.meta.rankName) ? entry.meta.rankName : `Score ${entry.value}`;
           return el('span', { class: 'value', text: display });
         })(),
       ]);
