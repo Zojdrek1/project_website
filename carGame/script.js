@@ -1791,8 +1791,11 @@ async function loadFirebaseSDKs() {
     document.head.appendChild(script);
   });
   try {
-    await loadScript("https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js");
-    await loadScript("https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js");
+    // Use the same version for all compat libraries
+    const ver = '9.6.7';
+    await loadScript(`https://www.gstatic.com/firebasejs/${ver}/firebase-app-compat.js`);
+    await loadScript(`https://www.gstatic.com/firebasejs/${ver}/firebase-auth-compat.js`);
+    await loadScript(`https://www.gstatic.com/firebasejs/${ver}/firebase-firestore-compat.js`);
     return true;
   } catch (e) {
     console.error("Failed to load Firebase SDKs. Leaderboards will be disabled.", e);
@@ -1814,12 +1817,6 @@ async function initializeGame({ skipLoader = false } = {}) {
   if (!Object.keys(state.partsPrices.legal).length) refreshPartsPrices();
   ensureModelTrends();
   ensureLeagueState();
-  const firebaseOk = await loadFirebaseSDKs();
-  if (firebaseOk) {
-    const uid = await initLeaderboard();
-    const profile = ensureProfile();
-    if (uid) profile.id = uid;
-  }
   ensureStats();
   initTutorial({ state, setView: (viewKey) => setView(viewKey), saveState });
   const tutorialState = state.ui?.tutorial;
@@ -1933,7 +1930,7 @@ function upgradeGarageTier() {
   refreshGarageUI();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   menuHandlers = {
     onLoadGame: (slotIndex) => {
       if (!loadSlotIntoState(slotIndex)) {
@@ -1951,6 +1948,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return initializeGame();
     },
   };
+  // Pre-initialize Firebase so it's ready for the menu's alias check
+  const firebaseOk = await loadFirebaseSDKs();
+  if (firebaseOk) {
+    const uid = await initLeaderboard();
+    // The profile will be properly ensured inside initializeGame
+  }
   showMainMenu(menuHandlers);
   const y = document.getElementById('year');
   if (y) y.textContent = new Date().getFullYear();
